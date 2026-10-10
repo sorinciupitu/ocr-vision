@@ -25,7 +25,11 @@ A modern, Dockerized web application for archiving physical documents and search
 
 ## Installation & Running
 
-1. **Clone or create the project folder** structure (as provided). 
+1. **Clone the repository**:
+   ```bash
+   git clone https://github.com/sorinciupitu/ocr-vision.git
+   cd ocr-vision
+   ```
 2. **Review `docker-compose.yml`**: Ensure the deployment settings suit your environment. By default, the `vllm` service expects 1 NVIDIA GPU.
 3. **Start the application**:
    ```bash
