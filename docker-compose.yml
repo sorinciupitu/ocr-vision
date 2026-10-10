@@ -15,7 +15,7 @@ services:
   vllm:
     image: vllm/vllm-openai:latest
     container_name: ocr-vllm
-    entrypoint: ["vllm", "serve", "lightonai/LightOnOCR-3-4B", "--trust-remote-code", "--default-chat-template-kwargs", '{"enable_thinking": false}']
+    entrypoint: ["vllm", "serve", "lightonai/LightOnOCR-3-4B", "--trust-remote-code", "--default-chat-template-kwargs", '{"enable_thinking": false}', "--gpu-memory-utilization", "0.85", "--max-model-len", "16384"]
     ports:
       - "8000:8000"
     volumes:
