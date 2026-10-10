@@ -89,6 +89,7 @@ async def upload_document(
     return new_doc
 
 
+@router.get("", response_model=List[DocumentResponse])
 @router.get("/", response_model=List[DocumentResponse])
 def get_documents(
     skip: int = 0,
