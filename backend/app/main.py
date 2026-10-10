@@ -3,7 +3,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.routers import auth, documents, sync_folders
 from app.database import engine, Base
 
-Base.metadata.create_all(bind=engine)
+from app.init_db import init_db
+
+init_db()
 
 app = FastAPI(title="OCR Document Archive API")
 
