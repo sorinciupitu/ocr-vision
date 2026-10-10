@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.env
+.pytest_cache/
+
+# Node
+node_modules/
+dist/
+dist-ssr/
+build/
+.output/
+
+# Logs
+logs/
+*.log
+
+# System
+.DS_Store
+.vscode/
+.idea/
+
+# Docker volumes
+pgdata/
+hf_cache/
+thumbnails/
+uploads/
+local_sync/

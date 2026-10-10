@@ -1,0 +1,61 @@
+services:
+  db:
+    image: postgres:15
+    container_name: ocr-db
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: ocr_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  vllm:
+    image: vllm/vllm-openai:latest
+    container_name: ocr-vllm
+    entrypoint: ["vllm", "serve", "lightonai/LightOnOCR-3-4B", "--trust-remote-code", "--default-chat-template-kwargs", '{"enable_thinking": false}']
+    ports:
+      - "8000:8000"
+    volumes:
+      - hf_cache:/root/.cache/huggingface
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: unless-stopped
+
+  backend:
+    build: ./backend
+    container_name: ocr-backend
+    ports:
+      - "8080:8080"
+    environment:
+      - DATABASE_URL=postgresql://user:password@db:5432/ocr_db
+      - VLLM_URL=http://vllm:8000/v1/chat/completions
+      - JWT_SECRET=supersecretkey
+      - SYNC_FOLDER=/app/local_sync
+    volumes:
+      - ./backend:/app
+      - ./sample_documents:/app/local_sync
+    depends_on:
+      - db
+      - vllm
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    container_name: ocr-frontend
+    ports:
+      - "6543:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  hf_cache:
