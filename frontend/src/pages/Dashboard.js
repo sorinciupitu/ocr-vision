@@ -7,12 +7,15 @@ import {
   CloudArrowUpIcon, EyeIcon, DocumentMagnifyingGlassIcon,
   ArrowPathIcon, TrashIcon, ArrowTopRightOnSquareIcon,
   MagnifyingGlassIcon, FolderArrowDownIcon, ArrowUpTrayIcon,
-  FolderIcon, TagIcon
+  FolderIcon, TagIcon, CheckIcon, SparklesIcon
 } from '@heroicons/react/24/outline';
+import { Menu } from '@headlessui/react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import Thumbnail from '../components/Thumbnail';
 import ConfirmDialog from '../components/ConfirmDialog';
 import OrganizeDialog, { tagColor } from '../components/OrganizeDialog';
+import ContextMenu from '../components/ContextMenu';
+import AutoTagRulesDialog from '../components/AutoTagRulesDialog';
 
 const statusStyle = {
   completed: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300',
@@ -29,6 +32,12 @@ export default function Dashboard() {
   const [busyId, setBusyId] = useState(null);
   const [confirmDoc, setConfirmDoc] = useState(null);
   const [organizeDoc, setOrganizeDoc] = useState(null);
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
+  const [contextMenu, setContextMenu] = useState(null);
+  const [confirmBulk, setConfirmBulk] = useState(false);
+  const [showRules, setShowRules] = useState(false);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const lastClickedRef = useRef(null);
   const [deleting, setDeleting] = useState(false);
   const [sortBy, setSortBy] = useState('recent');
   const navigate = useNavigate();
@@ -81,8 +90,7 @@ export default function Dashboard() {
       }
     }
     setUploading(false);
-    fetchDocuments();
-    fetchMeta();
+    window.dispatchEvent(new CustomEvent('docs-changed'));
   }, [folderId, fetchDocuments]);
 
   const onDrop = useCallback((acceptedFiles) => uploadFiles(acceptedFiles), [uploadFiles]);
@@ -124,8 +132,7 @@ export default function Dashboard() {
   };
 
   const handleOrganizeChanged = () => {
-    fetchDocuments();
-    fetchMeta();
+    window.dispatchEvent(new CustomEvent('docs-changed'));
     if (organizeDoc) {
       api.get(`/documents/${organizeDoc.id}`).then((r) => setOrganizeDoc(r.data)).catch(() => {});
     }
@@ -135,6 +142,99 @@ export default function Dashboard() {
     window.open(mediaUrl(`/documents/${doc.id}/file?disposition=inline`), '_blank', 'noopener');
   };
 
+  // ---------- multi-selection ----------
+  const clearSelection = () => setSelectedIds(new Set());
+
+  const toggleSelect = (id) => {
+    const next = new Set(selectedIds);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setSelectedIds(next);
+    lastClickedRef.current = id;
+  };
+
+  const handleCardClick = (e, doc) => {
+    if (e.target.closest('button')) return;
+    if (e.shiftKey && lastClickedRef.current) {
+      const ids = sortedDocuments.map((d) => d.id);
+      const a = ids.indexOf(lastClickedRef.current);
+      const b = ids.indexOf(doc.id);
+      if (a !== -1 && b !== -1) {
+        const [lo, hi] = a < b ? [a, b] : [b, a];
+        setSelectedIds(new Set(ids.slice(lo, hi + 1)));
+        return;
+      }
+    }
+    if (e.metaKey || e.ctrlKey) {
+      toggleSelect(doc.id);
+      return;
+    }
+    lastClickedRef.current = null;
+    if (selectedIds.size) clearSelection();
+  };
+
+  const handleContextMenu = (e, doc) => {
+    e.preventDefault();
+    if (!selectedIds.has(doc.id)) {
+      setSelectedIds(new Set([doc.id]));
+      lastClickedRef.current = doc.id;
+    }
+    setContextMenu({ x: e.clientX, y: e.clientY, doc });
+  };
+
+  // ---------- bulk operations ----------
+  const bulkMove = async (ids, folderId) => {
+    if (!ids.length) return;
+    setBulkBusy(true);
+    try {
+      await api.post('/documents/bulk-folder', { document_ids: ids, folder_id: folderId });
+      toast.success(`Moved ${ids.length} document${ids.length > 1 ? 's' : ''}`);
+      window.dispatchEvent(new CustomEvent('docs-changed'));
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Failed to move documents');
+    }
+    setBulkBusy(false);
+  };
+
+  const bulkAddTags = async (ids, tagIds) => {
+    if (!ids.length) return;
+    try {
+      await api.post('/documents/bulk-tags', { document_ids: ids, tag_ids: tagIds });
+      toast.success(`Tagged ${ids.length} document${ids.length > 1 ? 's' : ''}`);
+      // Keep the selection: the user may want to add more tags.
+      fetchDocuments();
+      fetchMeta();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Failed to tag documents');
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    const ids = [...selectedIds];
+    if (!ids.length) return;
+    setDeleting(true);
+    try {
+      const res = await api.post('/documents/bulk-delete', { document_ids: ids });
+      toast.success(`Deleted ${res.data.deleted} document${res.data.deleted === 1 ? '' : 's'}`);
+      setConfirmBulk(false);
+      window.dispatchEvent(new CustomEvent('docs-changed'));
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Failed to delete documents');
+    }
+    setDeleting(false);
+  };
+
+  // Sidebar drops (and other views) announce changes here.
+  useEffect(() => {
+    const onDocsChanged = () => {
+      fetchDocuments();
+      fetchMeta();
+      clearSelection();
+    };
+    window.addEventListener('docs-changed', onDocsChanged);
+    return () => window.removeEventListener('docs-changed', onDocsChanged);
+  }, [fetchDocuments]);
+
   const quickActions = [
     { label: 'Upload documents', desc: 'Add PDFs or images to the archive', icon: ArrowUpTrayIcon, onClick: () => heroInputRef.current && heroInputRef.current.click() },
     { label: 'Search archive', desc: 'Full-text search across OCR text', icon: MagnifyingGlassIcon, onClick: () => navigate('/search') },
@@ -143,6 +243,29 @@ export default function Dashboard() {
 
   const cardClass = 'bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 shadow-sm';
   const iconBtn = 'text-gray-400 dark:text-gray-500 hover:text-primary-600 p-1.5 rounded-full hover:bg-primary-50 dark:hover:bg-gray-800 transition-colors';
+
+  const contextItems = contextMenu
+    ? [
+        { label: 'Open', icon: EyeIcon, onClick: () => navigate(`/document/${contextMenu.doc.id}`) },
+        { label: 'View original', icon: ArrowTopRightOnSquareIcon, onClick: () => openOriginal(contextMenu.doc) },
+        { label: 'Organize…', icon: FolderIcon, onClick: () => setOrganizeDoc(contextMenu.doc) },
+        { divider: true },
+        { header: `Move ${selectedIds.size || 1} to folder` },
+        ...folders.map((f) => ({
+          label: f.name,
+          icon: FolderIcon,
+          onClick: () => bulkMove([...selectedIds], f.id),
+        })),
+        { label: 'No folder', icon: FolderIcon, onClick: () => bulkMove([...selectedIds], null) },
+        { divider: true },
+        {
+          label: 'Select all',
+          icon: CheckIcon,
+          onClick: () => setSelectedIds(new Set(sortedDocuments.map((d) => d.id))),
+        },
+        { label: 'Clear selection', onClick: clearSelection },
+      ]
+    : [];
 
   return (
     <div className="space-y-8">
@@ -202,15 +325,25 @@ export default function Dashboard() {
               ? folders.find((f) => f.id === folderId).name
               : 'Recent Archives'}
           </h3>
-          <select
-            value={sortBy}
-            onChange={(e) => setSortBy(e.target.value)}
-            className="text-sm border border-gray-200 dark:border-gray-700 rounded-xl px-3 py-2 bg-white dark:bg-gray-900 text-gray-600 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-primary-500"
-          >
-            <option value="recent">Sort By: Recent</option>
-            <option value="name">Sort By: Name</option>
-            <option value="status">Sort By: Status</option>
-          </select>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowRules(true)}
+              className="inline-flex items-center gap-1.5 text-sm border border-gray-200 dark:border-gray-700 rounded-xl px-3 py-2 bg-white dark:bg-gray-900 text-gray-600 dark:text-gray-300 hover:border-primary-400 hover:text-primary-600 dark:hover:text-primary-400 transition-colors"
+              title="Manage auto-tagging rules"
+            >
+              <SparklesIcon className="w-4 h-4" />
+              <span className="hidden sm:inline">Auto-tag rules</span>
+            </button>
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
+              className="text-sm border border-gray-200 dark:border-gray-700 rounded-xl px-3 py-2 bg-white dark:bg-gray-900 text-gray-600 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-primary-500"
+            >
+              <option value="recent">Sort By: Recent</option>
+              <option value="name">Sort By: Name</option>
+              <option value="status">Sort By: Status</option>
+            </select>
+          </div>
         </div>
 
         {tags.length > 0 && (
@@ -258,13 +391,43 @@ export default function Dashboard() {
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5">
             {sortedDocuments.map((doc) => (
-              <div key={doc.id} className={`${cardClass} hover:shadow-md transition-shadow overflow-hidden flex flex-col`}>
+              <div
+                key={doc.id}
+                onClick={(e) => handleCardClick(e, doc)}
+                onContextMenu={(e) => handleContextMenu(e, doc)}
+                draggable
+                onDragStart={(e) => {
+                  const ids = selectedIds.has(doc.id) ? [...selectedIds] : [doc.id];
+                  if (!selectedIds.has(doc.id)) setSelectedIds(new Set([doc.id]));
+                  e.dataTransfer.setData('application/x-doc-ids', JSON.stringify(ids));
+                  e.dataTransfer.setData('text/plain', JSON.stringify(ids));
+                  e.dataTransfer.effectAllowed = 'move';
+                }}
+                className={`${cardClass} relative hover:shadow-md transition-shadow overflow-hidden flex flex-col cursor-default ${
+                  selectedIds.has(doc.id) ? 'ring-2 ring-primary-500' : ''
+                }`}
+              >
                 <button
                   type="button"
                   onClick={() => navigate(`/document/${doc.id}`)}
                   className="block w-full"
                 >
                   <Thumbnail document={doc} className="w-full h-40 rounded-none border-b border-gray-100 dark:border-gray-800" />
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleSelect(doc.id);
+                  }}
+                  className={`absolute top-2 left-2 z-10 w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${
+                    selectedIds.has(doc.id)
+                      ? 'bg-primary-500 border-primary-500 text-white'
+                      : 'bg-white/90 dark:bg-gray-800/90 border-gray-300 dark:border-gray-600 text-transparent hover:border-primary-500'
+                  }`}
+                  title={selectedIds.has(doc.id) ? 'Deselect' : 'Select'}
+                >
+                  <CheckIcon className="w-4 h-4" />
                 </button>
                 <div className="p-4 flex flex-col flex-1">
                   <button
@@ -322,6 +485,83 @@ export default function Dashboard() {
         )}
       </div>
 
+      {/* Selection action bar */}
+      {selectedIds.size > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-1.5 sm:gap-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl shadow-lg px-4 py-2.5">
+          <span className="text-sm font-semibold text-gray-800 dark:text-gray-100 mr-1">
+            {selectedIds.size} selected
+          </span>
+          <Menu as="div" className="relative">
+            <Menu.Button
+              disabled={bulkBusy}
+              className="px-3 py-1.5 text-sm font-medium rounded-xl bg-primary-500 text-white hover:bg-primary-600 disabled:opacity-50"
+            >
+              Move to folder
+            </Menu.Button>
+            <Menu.Items className="absolute bottom-full left-0 mb-2 w-56 bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-100 dark:border-gray-700 py-1 focus:outline-none">
+              <Menu.Item>
+                {({ active }) => (
+                  <button
+                    onClick={() => bulkMove([...selectedIds], null)}
+                    className={`${active ? 'bg-gray-50 dark:bg-gray-700' : ''} w-full text-left px-3 py-2 text-sm text-gray-700 dark:text-gray-200 flex items-center gap-2`}
+                  >
+                    <FolderIcon className="w-4 h-4 flex-shrink-0" />
+                    No folder
+                  </button>
+                )}
+              </Menu.Item>
+              {folders.map((f) => (
+                <Menu.Item key={f.id}>
+                  {({ active }) => (
+                    <button
+                      onClick={() => bulkMove([...selectedIds], f.id)}
+                      className={`${active ? 'bg-gray-50 dark:bg-gray-700' : ''} w-full text-left px-3 py-2 text-sm text-gray-700 dark:text-gray-200 flex items-center gap-2`}
+                    >
+                      <FolderIcon className="w-4 h-4 flex-shrink-0" />
+                      <span className="truncate">{f.name}</span>
+                    </button>
+                  )}
+                </Menu.Item>
+              ))}
+            </Menu.Items>
+          </Menu>
+          <Menu as="div" className="relative">
+            <Menu.Button className="px-3 py-1.5 text-sm font-medium rounded-xl bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-700">
+              Add tags
+            </Menu.Button>
+            <Menu.Items className="absolute bottom-full left-0 mb-2 w-48 bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-100 dark:border-gray-700 py-1 focus:outline-none">
+              {tags.length === 0 && (
+                <div className="px-3 py-2 text-sm text-gray-400">No tags yet</div>
+              )}
+              {tags.map((t) => (
+                <Menu.Item key={t.id}>
+                  {({ active }) => (
+                    <button
+                      onClick={() => bulkAddTags([...selectedIds], [t.id])}
+                      className={`${active ? 'bg-gray-50 dark:bg-gray-700' : ''} w-full text-left px-3 py-2 text-sm text-gray-700 dark:text-gray-200`}
+                    >
+                      {t.name}
+                    </button>
+                  )}
+                </Menu.Item>
+              ))}
+            </Menu.Items>
+          </Menu>
+          <button
+            onClick={() => setConfirmBulk(true)}
+            className="px-3 py-1.5 text-sm font-medium rounded-xl text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10"
+          >
+            Delete
+          </button>
+          <button
+            onClick={clearSelection}
+            className="px-3 py-1.5 text-sm font-medium rounded-xl text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800"
+          >
+            Clear
+          </button>
+        </div>
+      )}
+
       <ConfirmDialog
         open={!!confirmDoc}
         title="Delete document"
@@ -331,6 +571,36 @@ export default function Dashboard() {
         onConfirm={handleDelete}
         onCancel={() => setConfirmDoc(null)}
       />
+
+      <ConfirmDialog
+        open={confirmBulk}
+        title="Delete documents"
+        message={selectedIds.size ? `Permanently delete ${selectedIds.size} selected document(s)? Files, thumbnails and extracted text will be removed.` : ''}
+        confirmLabel="Delete"
+        busy={deleting}
+        onConfirm={handleBulkDelete}
+        onCancel={() => setConfirmBulk(false)}
+      />
+
+      {showRules && (
+        <AutoTagRulesDialog
+          tags={tags}
+          onClose={() => setShowRules(false)}
+          onChanged={() => {
+            fetchDocuments();
+            fetchMeta();
+          }}
+        />
+      )}
+
+      {contextMenu && (
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          items={contextItems}
+          onClose={() => setContextMenu(null)}
+        />
+      )}
 
       {organizeDoc && (
         <OrganizeDialog

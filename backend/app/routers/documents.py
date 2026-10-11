@@ -12,9 +12,10 @@ from sqlalchemy import text, func
 from app.database import get_db
 from app.models import User, Document, DocumentPage, Tag, Folder
 from app.dependencies import get_current_user, get_current_user_media
-from app.schemas import DocumentResponse, DocumentDetailResponse, SearchResult
+from app.schemas import DocumentResponse, DocumentDetailResponse, SearchResult, BulkDeleteRequest, BulkDeleteResult
 from app.config import get_settings
 from app.ocr_service import process_file, create_thumbnail
+from app.auto_tagging import apply_rules_to_document
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 settings = get_settings()
@@ -79,6 +80,8 @@ async def process_document_background(document_id: UUID, file_path: str, db: Ses
             db.add(page)
 
         db.commit()
+        # Auto-tagging: rules run on every freshly completed document.
+        apply_rules_to_document(db, db_doc)
     except Exception as e:
         db_doc = db.query(Document).filter(Document.id == document_id).first()
         if db_doc:
@@ -236,14 +239,7 @@ def reprocess_document(
     return doc
 
 
-@router.delete("/{document_id}")
-def delete_document(
-    document_id: UUID,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    doc = _get_owned_document(document_id, db, current_user)
-
+def _remove_owned_files(doc: Document) -> None:
     # Only remove files we own inside the upload folder; never delete the
     # user's original files that live in external sync folders.
     upload_root = os.path.abspath(settings.upload_folder)
@@ -257,6 +253,34 @@ def delete_document(
             except OSError as e:
                 print(f"Error removing {abs_path}: {e}")
 
+
+@router.post("/bulk-delete", response_model=BulkDeleteResult)
+def bulk_delete_documents(
+    data: BulkDeleteRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    ids = list(dict.fromkeys(data.document_ids))
+    docs = db.query(Document).filter(
+        Document.id.in_(ids), Document.owner_id == current_user.id
+    ).all()
+    if len(docs) != len(ids):
+        raise HTTPException(status_code=404, detail="One or more documents not found")
+    for doc in docs:
+        _remove_owned_files(doc)
+        db.delete(doc)
+    db.commit()
+    return BulkDeleteResult(deleted=len(docs))
+
+
+@router.delete("/{document_id}")
+def delete_document(
+    document_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    doc = _get_owned_document(document_id, db, current_user)
+    _remove_owned_files(doc)
     db.delete(doc)
     db.commit()
     return {"detail": "Document deleted"}

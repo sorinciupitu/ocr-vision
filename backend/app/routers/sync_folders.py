@@ -14,6 +14,7 @@ from app.models import User, Document, DocumentPage, SyncFolder
 from app.dependencies import get_current_user
 from app.config import get_settings
 from app.ocr_service import process_file, create_thumbnail
+from app.auto_tagging import apply_rules_to_document
 from app.schemas import DocumentResponse
 
 router = APIRouter(prefix="/sync", tags=["sync"])
@@ -90,6 +91,8 @@ async def ingest_file(file_path: str, owner_id: UUID, db: Session):
             db.add(page)
 
         db.commit()
+        # Auto-tagging: rules run on every freshly completed document.
+        apply_rules_to_document(db, doc)
     except Exception as e:
         print(f"Error ingesting {file_path}: {e}")
 

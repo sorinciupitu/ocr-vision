@@ -9,6 +9,7 @@ import Search from './pages/Search';
 import DocumentView from './pages/DocumentView';
 import PrintView from './pages/PrintView';
 import SyncFolders from './pages/SyncFolders';
+import Analytics from './pages/Analytics';
 
 function App() {
   return (
@@ -23,6 +24,7 @@ function App() {
             <Route path="/search" element={<Search />} />
             <Route path="/document/:id" element={<DocumentView />} />
             <Route path="/sync" element={<SyncFolders />} />
+            <Route path="/analytics" element={<Analytics />} />
           </Route>
         </Routes>
       </BrowserRouter>

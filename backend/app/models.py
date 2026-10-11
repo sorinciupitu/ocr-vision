@@ -22,6 +22,7 @@ class User(Base):
     sync_folders = relationship("SyncFolder", back_populates="owner")
     folders = relationship("Folder", back_populates="owner")
     tags = relationship("Tag", back_populates="owner")
+    tag_rules = relationship("TagRule", back_populates="owner")
 
 
 document_tags = Table(
@@ -119,6 +120,21 @@ class Tag(Base):
     __table_args__ = (
         UniqueConstraint("owner_id", "name", name="uq_tags_owner_name"),
     )
+
+
+class TagRule(Base):
+    """Auto-tag rule: documents whose OCR text or filename contain pattern get tag."""
+    __tablename__ = "tag_rules"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    pattern = Column(String(100), nullable=False)
+    is_active = Column(Boolean, default=True)
+    owner_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    tag_id = Column(UUID(as_uuid=True), ForeignKey("tags.id", ondelete="CASCADE"), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    owner = relationship("User", back_populates="tag_rules")
+    tag = relationship("Tag", lazy="selectin")
 
 
 class SyncFolder(Base):

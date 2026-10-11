@@ -4,7 +4,7 @@ import toast from 'react-hot-toast';
 import { Menu, Transition } from '@headlessui/react';
 import {
   MagnifyingGlassIcon, DocumentPlusIcon, FolderArrowDownIcon,
-  ArrowRightOnRectangleIcon, PlusIcon, ArrowUpTrayIcon
+  ArrowRightOnRectangleIcon, PlusIcon, ArrowUpTrayIcon, ChartBarIcon
 } from '@heroicons/react/24/outline';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
@@ -13,12 +13,13 @@ import ThemeToggle from './ThemeToggle';
 const navigation = [
   { name: 'Dashboard', href: '/', icon: DocumentPlusIcon },
   { name: 'Search', href: '/search', icon: MagnifyingGlassIcon },
+  { name: 'Analytics', href: '/analytics', icon: ChartBarIcon },
   { name: 'Sync Folders', href: '/sync', icon: FolderArrowDownIcon },
 ];
 
 const FOLDER_COLORS = ['bg-primary-500', 'bg-emerald-500', 'bg-amber-500', 'bg-rose-500', 'bg-sky-500', 'bg-violet-500'];
 
-const PAGE_TITLES = { '/': 'Dashboard', '/search': 'Search', '/sync': 'Sync Folders' };
+const PAGE_TITLES = { '/': 'Dashboard', '/search': 'Search', '/analytics': 'Analytics', '/sync': 'Sync Folders' };
 
 function useQuery() {
   const { search } = useLocation();
@@ -36,12 +37,21 @@ function Layout() {
   const [creatingFolder, setCreatingFolder] = useState(false);
   const query = useQuery();
   const activeFolder = query.get('folder');
+  const [dropTarget, setDropTarget] = useState(null);
 
   const fetchFolders = () => {
     api.get('/folders').then((r) => setFolders(r.data)).catch(() => {});
   };
 
   useEffect(fetchFolders, [location.pathname]);
+
+  // Folder counts change on bulk moves, drops and organize actions anywhere
+  // in the app; those all dispatch 'docs-changed'.
+  useEffect(() => {
+    const onDocsChanged = () => fetchFolders();
+    window.addEventListener('docs-changed', onDocsChanged);
+    return () => window.removeEventListener('docs-changed', onDocsChanged);
+  }, []);
 
   const createFolder = async () => {
     const name = newFolderName.trim();
@@ -58,6 +68,39 @@ function Layout() {
     }
     setCreatingFolder(false);
   };
+
+  // Drop documents (dragged from the dashboard) into a sidebar folder.
+  const handleDrop = async (e, folderId) => {
+    e.preventDefault();
+    setDropTarget(null);
+    const raw =
+      e.dataTransfer.getData('application/x-doc-ids') || e.dataTransfer.getData('text/plain');
+    if (!raw) return;
+    let ids;
+    try {
+      ids = JSON.parse(raw);
+    } catch {
+      return;
+    }
+    if (!Array.isArray(ids) || ids.length === 0) return;
+    try {
+      await api.post('/documents/bulk-folder', { document_ids: ids, folder_id: folderId });
+      toast.success(`Moved ${ids.length} document${ids.length > 1 ? 's' : ''}${folderId ? ' to folder' : ''}`);
+      window.dispatchEvent(new CustomEvent('docs-changed'));
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Failed to move documents');
+    }
+  };
+
+  const dropProps = (key) => ({
+    onDragOver: (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      setDropTarget(key);
+    },
+    onDragLeave: () => setDropTarget((cur) => (cur === key ? null : cur)),
+    onDrop: (e) => handleDrop(e, key === 'all' ? null : key),
+  });
 
   if (loading) return <div className="min-h-screen flex items-center justify-center text-gray-500 dark:text-gray-400 bg-[#f0f0f0] dark:bg-gray-950">Loading...</div>;
   if (!user) return <Navigate to="/login" replace />;
@@ -120,10 +163,11 @@ function Layout() {
               <p className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider">Folders</p>
               <button
                 onClick={() => navigate('/')}
-                className={`text-xs font-medium transition-colors ${
+                {...dropProps('all')}
+                className={`text-xs font-medium transition-colors rounded px-1 ${
                   !activeFolder ? 'text-primary-600 dark:text-primary-400' : 'text-gray-400 hover:text-primary-600 dark:hover:text-primary-400'
-                }`}
-                title="Show all documents"
+                } ${dropTarget === 'all' ? 'ring-2 ring-primary-400 bg-primary-50 dark:bg-primary-500/10' : ''}`}
+                title="Show all documents (or drop documents here to unfile them)"
               >
                 All
               </button>
@@ -132,10 +176,15 @@ function Layout() {
               <button
                 key={f.id}
                 onClick={() => navigate(`/?folder=${f.id}`)}
+                {...dropProps(f.id)}
                 className={`flex items-center justify-between w-full px-4 py-2 text-sm rounded-xl transition-colors ${
                   activeFolder === f.id
                     ? 'bg-primary-50 dark:bg-primary-500/10 text-primary-700 dark:text-primary-300 font-medium'
                     : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'
+                } ${
+                  dropTarget === f.id
+                    ? 'ring-2 ring-primary-400 bg-primary-50 dark:bg-primary-500/10'
+                    : ''
                 }`}
               >
                 <span className="flex items-center min-w-0">

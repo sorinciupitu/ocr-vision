@@ -11,6 +11,7 @@ from app.dependencies import get_current_user
 from app.schemas import (
     FolderCreate, FolderResponse, TagCreate, TagResponse,
     DocumentMove, DocumentTagsUpdate, DocumentResponse,
+    BulkFolderUpdate, BulkTagsAdd, BulkResult,
 )
 
 router = APIRouter(tags=["organize"])
@@ -197,3 +198,52 @@ def set_document_tags(
     db.commit()
     db.refresh(doc)
     return doc
+
+
+def _owned_docs_or_404(document_ids, db: Session, user: User):
+    """Fetch every requested document, failing (and changing nothing) if any
+    document is missing or owned by someone else."""
+    ids = list(dict.fromkeys(document_ids))
+    docs = db.query(Document).filter(
+        Document.id.in_(ids), Document.owner_id == user.id
+    ).all()
+    if len(docs) != len(ids):
+        raise HTTPException(status_code=404, detail="One or more documents not found")
+    return docs
+
+
+@router.post("/documents/bulk-folder", response_model=BulkResult)
+def bulk_move_documents(
+    data: BulkFolderUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    docs = _owned_docs_or_404(data.document_ids, db, current_user)
+    if data.folder_id is not None:
+        _get_owned_folder(data.folder_id, db, current_user)
+    for doc in docs:
+        doc.folder_id = data.folder_id
+    db.commit()
+    return BulkResult(updated=len(docs))
+
+
+@router.post("/documents/bulk-tags", response_model=BulkResult)
+def bulk_add_tags(
+    data: BulkTagsAdd,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    docs = _owned_docs_or_404(data.document_ids, db, current_user)
+    tag_ids = list(dict.fromkeys(data.tag_ids))
+    tags = db.query(Tag).filter(
+        Tag.id.in_(tag_ids), Tag.owner_id == current_user.id
+    ).all()
+    if len(tags) != len(tag_ids):
+        raise HTTPException(status_code=404, detail="One or more tags not found")
+    for doc in docs:
+        have = {t.id for t in doc.tags}
+        for tag in tags:
+            if tag.id not in have:
+                doc.tags.append(tag)
+    db.commit()
+    return BulkResult(updated=len(docs))
