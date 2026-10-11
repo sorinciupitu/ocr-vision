@@ -15,7 +15,7 @@ services:
   vllm:
     image: vllm/vllm-openai:v0.30.0
     container_name: ocr-vllm
-    entrypoint: ["vllm", "serve", "lightonai/LightOnOCR-3-4B", "--trust-remote-code", "--limit-mm-per-prompt", '{"image": 1}', "--default-chat-template-kwargs", '{"enable_thinking": false}', "--mm-processor-cache-gb", "0", "--no-enable-prefix-caching", "--gpu-memory-utilization", "0.85", "--max-model-len", "18000", "--mm-encoder-attn-backend", "TORCH_SDPA", "--attention-backend", "TRITON_ATTN", "--mm-processor-kwargs", '{"max_pixels": 4194304}', "--enforce-eager"]
+    entrypoint: ["vllm", "serve", "lightonai/LightOnOCR-3-4B", "--trust-remote-code", "--limit-mm-per-prompt", '{"image": 1}', "--default-chat-template-kwargs", '{"enable_thinking": false}', "--mm-processor-cache-gb", "0", "--no-enable-prefix-caching", "--gpu-memory-utilization", "0.88", "--max-model-len", "16000", "--mm-encoder-attn-backend", "TORCH_SDPA", "--attention-backend", "TRITON_ATTN", "--mm-processor-kwargs", '{"max_pixels": 4194304}', "--enforce-eager"]
     environment:
       - PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
     ports:
