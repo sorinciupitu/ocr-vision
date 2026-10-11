@@ -4,13 +4,13 @@ import shutil
 from typing import List, Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, BackgroundTasks
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import text, func
 
 from app.database import get_db
-from app.models import User, Document, DocumentPage
+from app.models import User, Document, DocumentPage, Tag, Folder
 from app.dependencies import get_current_user, get_current_user_media
 from app.schemas import DocumentResponse, DocumentDetailResponse, SearchResult
 from app.config import get_settings
@@ -91,9 +91,17 @@ async def process_document_background(document_id: UUID, file_path: str, db: Ses
 async def upload_document(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
+    folder_id: Optional[UUID] = Form(default=None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    if folder_id is not None:
+        owned = db.query(Folder).filter(
+            Folder.id == folder_id, Folder.owner_id == current_user.id
+        ).first()
+        if not owned:
+            raise HTTPException(status_code=404, detail="Folder not found")
+
     os.makedirs(settings.upload_folder, exist_ok=True)
     file_path = os.path.join(settings.upload_folder, file.filename)
     
@@ -110,6 +118,7 @@ async def upload_document(
         file_type=file_ext,
         file_size=file_size,
         owner_id=current_user.id,
+        folder_id=folder_id,
         ocr_status="pending"
     )
     db.add(new_doc)
@@ -126,10 +135,20 @@ async def upload_document(
 def get_documents(
     skip: int = 0,
     limit: int = 100,
+    folder_id: Optional[UUID] = None,
+    unfiled: bool = False,
+    tag_id: Optional[UUID] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    return db.query(Document).filter(Document.owner_id == current_user.id).offset(skip).limit(limit).all()
+    query = db.query(Document).filter(Document.owner_id == current_user.id)
+    if unfiled:
+        query = query.filter(Document.folder_id.is_(None))
+    elif folder_id is not None:
+        query = query.filter(Document.folder_id == folder_id)
+    if tag_id is not None:
+        query = query.join(Document.tags).filter(Tag.id == tag_id)
+    return query.offset(skip).limit(limit).all()
 
 
 @router.get("/search", response_model=List[SearchResult])

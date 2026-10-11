@@ -24,6 +24,58 @@ class UserResponse(BaseModel):
         from_attributes = True
 
 
+class TagBrief(BaseModel):
+    id: UUID4
+    name: str
+
+    class Config:
+        from_attributes = True
+
+
+class FolderBrief(BaseModel):
+    id: UUID4
+    name: str
+
+    class Config:
+        from_attributes = True
+
+
+class FolderCreate(BaseModel):
+    name: str
+
+
+class FolderResponse(BaseModel):
+    id: UUID4
+    name: str
+    document_count: int = 0
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class TagCreate(BaseModel):
+    name: str
+
+
+class TagResponse(BaseModel):
+    id: UUID4
+    name: str
+    document_count: int = 0
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class DocumentMove(BaseModel):
+    folder_id: Optional[UUID4] = None
+
+
+class DocumentTagsUpdate(BaseModel):
+    tag_ids: List[UUID4]
+
+
 class DocumentResponse(BaseModel):
     id: UUID4
     title: str
@@ -33,6 +85,8 @@ class DocumentResponse(BaseModel):
     page_count: int
     ocr_status: str
     has_thumbnail: bool = False
+    folder: Optional[FolderBrief] = None
+    tags: List[TagBrief] = []
     created_at: datetime
     
     class Config:

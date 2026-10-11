@@ -20,6 +20,11 @@ const FOLDER_COLORS = ['bg-primary-500', 'bg-emerald-500', 'bg-amber-500', 'bg-r
 
 const PAGE_TITLES = { '/': 'Dashboard', '/search': 'Search', '/sync': 'Sync Folders' };
 
+function useQuery() {
+  const { search } = useLocation();
+  return new URLSearchParams(search);
+}
+
 function Layout() {
   const { user, loading, logout } = useAuth();
   const navigate = useNavigate();
@@ -27,15 +32,40 @@ function Layout() {
   const fileInputRef = useRef(null);
   const [uploading, setUploading] = useState(false);
   const [folders, setFolders] = useState([]);
+  const [newFolderName, setNewFolderName] = useState('');
+  const [creatingFolder, setCreatingFolder] = useState(false);
+  const query = useQuery();
+  const activeFolder = query.get('folder');
 
-  useEffect(() => {
-    api.get('/sync/folders').then((r) => setFolders(r.data)).catch(() => {});
-  }, []);
+  const fetchFolders = () => {
+    api.get('/folders').then((r) => setFolders(r.data)).catch(() => {});
+  };
+
+  useEffect(fetchFolders, [location.pathname]);
+
+  const createFolder = async () => {
+    const name = newFolderName.trim();
+    if (!name) return;
+    setCreatingFolder(true);
+    try {
+      const res = await api.post('/folders', { name });
+      setNewFolderName('');
+      toast.success(`Folder "${res.data.name}" created`);
+      fetchFolders();
+      navigate(`/?folder=${res.data.id}`);
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Failed to create folder');
+    }
+    setCreatingFolder(false);
+  };
 
   if (loading) return <div className="min-h-screen flex items-center justify-center text-gray-500 dark:text-gray-400 bg-[#f0f0f0] dark:bg-gray-950">Loading...</div>;
   if (!user) return <Navigate to="/login" replace />;
 
-  const currentTitle = PAGE_TITLES[location.pathname] || 'Document';
+  const activeFolderObj = activeFolder && folders.find((f) => f.id === activeFolder);
+  const currentTitle =
+    (location.pathname === '/' && activeFolderObj && activeFolderObj.name) ||
+    PAGE_TITLES[location.pathname] || 'Document';
 
   const handleUpload = async (e) => {
     const file = e.target.files && e.target.files[0];
@@ -86,20 +116,55 @@ function Layout() {
           })}
 
           <div className="pt-6">
-            <p className="px-4 text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-2">Folders</p>
+            <div className="flex items-center justify-between px-4 mb-2">
+              <p className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider">Folders</p>
+              <button
+                onClick={() => navigate('/')}
+                className={`text-xs font-medium transition-colors ${
+                  !activeFolder ? 'text-primary-600 dark:text-primary-400' : 'text-gray-400 hover:text-primary-600 dark:hover:text-primary-400'
+                }`}
+                title="Show all documents"
+              >
+                All
+              </button>
+            </div>
             {folders.map((f, i) => (
               <button
                 key={f.id}
-                onClick={() => navigate('/sync')}
-                className="flex items-center w-full px-4 py-2 text-sm text-gray-600 dark:text-gray-300 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                onClick={() => navigate(`/?folder=${f.id}`)}
+                className={`flex items-center justify-between w-full px-4 py-2 text-sm rounded-xl transition-colors ${
+                  activeFolder === f.id
+                    ? 'bg-primary-50 dark:bg-primary-500/10 text-primary-700 dark:text-primary-300 font-medium'
+                    : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'
+                }`}
               >
-                <span className={`w-2.5 h-2.5 rounded-full mr-3 flex-shrink-0 ${FOLDER_COLORS[i % FOLDER_COLORS.length]}`} />
-                <span className="truncate">{f.label || f.path}</span>
+                <span className="flex items-center min-w-0">
+                  <span className={`w-2.5 h-2.5 rounded-full mr-3 flex-shrink-0 ${FOLDER_COLORS[i % FOLDER_COLORS.length]}`} />
+                  <span className="truncate">{f.name}</span>
+                </span>
+                <span className="text-xs text-gray-400 dark:text-gray-500 ml-2 flex-shrink-0">{f.document_count}</span>
               </button>
             ))}
             {folders.length === 0 && (
               <p className="px-4 py-2 text-sm text-gray-400 dark:text-gray-500">No folders yet</p>
             )}
+            <div className="flex gap-2 px-4 mt-2">
+              <input
+                value={newFolderName}
+                onChange={(e) => setNewFolderName(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && createFolder()}
+                placeholder="New folder..."
+                className="flex-1 min-w-0 text-xs px-2.5 py-1.5 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-primary-500"
+              />
+              <button
+                onClick={createFolder}
+                disabled={creatingFolder || !newFolderName.trim()}
+                className="p-1.5 rounded-lg bg-primary-500 text-white hover:bg-primary-600 disabled:opacity-50"
+                title="Create folder"
+              >
+                <PlusIcon className="w-4 h-4" />
+              </button>
+            </div>
           </div>
         </nav>
 

@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 from sqlalchemy import (
-    Column, String, Text, DateTime, Integer, Boolean, ForeignKey, Index, func
+    Column, String, Text, DateTime, Integer, Boolean, ForeignKey, Index, Table, UniqueConstraint, func
 )
 from sqlalchemy.dialects.postgresql import UUID, TSVECTOR
 from sqlalchemy.orm import relationship
@@ -20,6 +20,16 @@ class User(Base):
 
     documents = relationship("Document", back_populates="owner")
     sync_folders = relationship("SyncFolder", back_populates="owner")
+    folders = relationship("Folder", back_populates="owner")
+    tags = relationship("Tag", back_populates="owner")
+
+
+document_tags = Table(
+    "document_tags",
+    Base.metadata,
+    Column("document_id", UUID(as_uuid=True), ForeignKey("documents.id", ondelete="CASCADE"), primary_key=True),
+    Column("tag_id", UUID(as_uuid=True), ForeignKey("tags.id", ondelete="CASCADE"), primary_key=True),
+)
 
 
 class Document(Base):
@@ -35,6 +45,7 @@ class Document(Base):
     ocr_text = Column(Text, default="")
     ocr_status = Column(String(20), default="pending")  # pending, processing, completed, failed
     thumbnail_path = Column(String(1000), nullable=True)
+    folder_id = Column(UUID(as_uuid=True), ForeignKey("folders.id", ondelete="SET NULL"), nullable=True)
     owner_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -42,6 +53,9 @@ class Document(Base):
 
     owner = relationship("User", back_populates="documents")
     pages = relationship("DocumentPage", back_populates="document", cascade="all, delete-orphan")
+    # Eager: responses serialize folder/tags after the DB session may close.
+    folder = relationship("Folder", back_populates="documents", lazy="selectin")
+    tags = relationship("Tag", secondary=document_tags, back_populates="documents", lazy="selectin")
 
     @property
     def has_thumbnail(self) -> bool:
@@ -51,6 +65,7 @@ class Document(Base):
         Index("idx_documents_search", "search_vector", postgresql_using="gin"),
         Index("idx_documents_owner", "owner_id"),
         Index("idx_documents_status", "ocr_status"),
+        Index("idx_documents_folder", "folder_id"),
     )
 
 
@@ -69,6 +84,40 @@ class DocumentPage(Base):
     __table_args__ = (
         Index("idx_pages_search", "search_vector", postgresql_using="gin"),
         Index("idx_pages_document", "document_id"),
+    )
+
+
+class Folder(Base):
+    """User-created archive folder; a document lives in at most one folder."""
+    __tablename__ = "folders"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name = Column(String(255), nullable=False)
+    owner_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    owner = relationship("User", back_populates="folders")
+    documents = relationship("Document", back_populates="folder")
+
+    __table_args__ = (
+        UniqueConstraint("owner_id", "name", name="uq_folders_owner_name"),
+    )
+
+
+class Tag(Base):
+    """User-created tag; a document can carry many tags."""
+    __tablename__ = "tags"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name = Column(String(100), nullable=False)
+    owner_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    owner = relationship("User", back_populates="tags")
+    documents = relationship("Document", secondary=document_tags, back_populates="tags")
+
+    __table_args__ = (
+        UniqueConstraint("owner_id", "name", name="uq_tags_owner_name"),
     )
 
 

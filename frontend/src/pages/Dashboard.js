@@ -6,11 +6,13 @@ import { format } from 'date-fns';
 import {
   CloudArrowUpIcon, EyeIcon, DocumentMagnifyingGlassIcon,
   ArrowPathIcon, TrashIcon, ArrowTopRightOnSquareIcon,
-  MagnifyingGlassIcon, FolderArrowDownIcon, ArrowUpTrayIcon
+  MagnifyingGlassIcon, FolderArrowDownIcon, ArrowUpTrayIcon,
+  FolderIcon, TagIcon
 } from '@heroicons/react/24/outline';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import Thumbnail from '../components/Thumbnail';
 import ConfirmDialog from '../components/ConfirmDialog';
+import OrganizeDialog, { tagColor } from '../components/OrganizeDialog';
 
 const statusStyle = {
   completed: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300',
@@ -21,27 +23,45 @@ const statusStyle = {
 
 export default function Dashboard() {
   const [documents, setDocuments] = useState([]);
+  const [folders, setFolders] = useState([]);
+  const [tags, setTags] = useState([]);
   const [uploading, setUploading] = useState(false);
   const [busyId, setBusyId] = useState(null);
   const [confirmDoc, setConfirmDoc] = useState(null);
+  const [organizeDoc, setOrganizeDoc] = useState(null);
   const [deleting, setDeleting] = useState(false);
   const [sortBy, setSortBy] = useState('recent');
   const navigate = useNavigate();
   const heroInputRef = useRef(null);
+  const [searchParams] = useSearchParams();
+  const folderId = searchParams.get('folder');
+  const tagId = searchParams.get('tag');
 
-  const fetchDocuments = async () => {
+  const fetchDocuments = useCallback(async () => {
     try {
-      const res = await api.get('/documents');
+      const params = {};
+      if (folderId) params.folder_id = folderId;
+      if (tagId) params.tag_id = tagId;
+      const res = await api.get('/documents', { params });
       setDocuments(res.data);
     } catch (err) {
       toast.error("Failed to load documents");
     }
+  }, [folderId, tagId]);
+
+  const fetchMeta = () => {
+    api.get('/folders').then((r) => setFolders(r.data)).catch(() => {});
+    api.get('/tags').then((r) => setTags(r.data)).catch(() => {});
   };
 
   useEffect(() => {
     fetchDocuments();
     const interval = setInterval(fetchDocuments, 5000);
     return () => clearInterval(interval);
+  }, [fetchDocuments]);
+
+  useEffect(() => {
+    fetchMeta();
   }, []);
 
   const uploadFiles = useCallback(async (files) => {
@@ -50,6 +70,7 @@ export default function Dashboard() {
     for (const file of files) {
       const formData = new FormData();
       formData.append('file', file);
+      if (folderId) formData.append('folder_id', folderId);
       try {
         await api.post('/documents/upload', formData, {
           headers: { 'Content-Type': 'multipart/form-data' }
@@ -61,7 +82,8 @@ export default function Dashboard() {
     }
     setUploading(false);
     fetchDocuments();
-  }, []);
+    fetchMeta();
+  }, [folderId, fetchDocuments]);
 
   const onDrop = useCallback((acceptedFiles) => uploadFiles(acceptedFiles), [uploadFiles]);
   const { getRootProps, getInputProps, isDragActive } = useDropzone({ onDrop });
@@ -94,10 +116,19 @@ export default function Dashboard() {
       toast.success('Document deleted');
       setConfirmDoc(null);
       fetchDocuments();
+      fetchMeta();
     } catch (err) {
       toast.error('Failed to delete document');
     }
     setDeleting(false);
+  };
+
+  const handleOrganizeChanged = () => {
+    fetchDocuments();
+    fetchMeta();
+    if (organizeDoc) {
+      api.get(`/documents/${organizeDoc.id}`).then((r) => setOrganizeDoc(r.data)).catch(() => {});
+    }
   };
 
   const openOriginal = (doc) => {
@@ -166,7 +197,11 @@ export default function Dashboard() {
       {/* Recent archives */}
       <div>
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Recent Archives</h3>
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+            {folderId && folders.find((f) => f.id === folderId)
+              ? folders.find((f) => f.id === folderId).name
+              : 'Recent Archives'}
+          </h3>
           <select
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value)}
@@ -178,10 +213,47 @@ export default function Dashboard() {
           </select>
         </div>
 
+        {tags.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2 mb-5">
+            <TagIcon className="w-4 h-4 text-gray-400 dark:text-gray-500" />
+            {tags.map((t) => {
+              const active = tagId === t.id;
+              return (
+                <button
+                  key={t.id}
+                  onClick={() => {
+                    const params = new URLSearchParams(searchParams);
+                    if (active) params.delete('tag');
+                    else params.set('tag', t.id);
+                    navigate({ search: params.toString() ? `?${params}` : '' });
+                  }}
+                  className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
+                    active
+                      ? tagColor(t.name)
+                      : 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
+                  }`}
+                  title={active ? 'Clear tag filter' : `Filter by #${t.name}`}
+                >
+                  {t.name}
+                  <span className={`ml-1.5 ${active ? 'opacity-70' : 'text-gray-400 dark:text-gray-500'}`}>{t.document_count}</span>
+                </button>
+              );
+            })}
+            {(folderId || tagId) && (
+              <button
+                onClick={() => navigate('/')}
+                className="text-xs font-medium text-primary-600 dark:text-primary-400 hover:underline ml-1"
+              >
+                Clear filters
+              </button>
+            )}
+          </div>
+        )}
+
         {sortedDocuments.length === 0 ? (
           <div className={`${cardClass} p-16 text-center text-gray-500 dark:text-gray-400`}>
             <DocumentMagnifyingGlassIcon className="w-12 h-12 mx-auto text-gray-300 dark:text-gray-600 mb-3" />
-            <p>No documents archived yet.</p>
+            <p>{folderId || tagId ? 'No documents match this filter.' : 'No documents archived yet.'}</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5">
@@ -206,11 +278,29 @@ export default function Dashboard() {
                   <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                     {format(new Date(doc.created_at), 'PP')} • {(doc.file_size / 1024 / 1024).toFixed(2)} MB • {doc.page_count} pg
                   </p>
+                  {(doc.folder || (doc.tags && doc.tags.length > 0)) && (
+                    <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                      {doc.folder && (
+                        <span className="inline-flex items-center text-xs text-gray-500 dark:text-gray-400">
+                          <FolderIcon className="w-3.5 h-3.5 mr-1" />
+                          {doc.folder.name}
+                        </span>
+                      )}
+                      {(doc.tags || []).map((t) => (
+                        <span key={t.id} className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium ${tagColor(t.name)}`}>
+                          {t.name}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                   <div className="mt-3 flex items-center justify-between">
                     <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${statusStyle[doc.ocr_status] || statusStyle.pending}`}>
                       {doc.ocr_status}
                     </span>
                     <div className="flex items-center space-x-1">
+                      <button onClick={() => setOrganizeDoc(doc)} className={iconBtn} title="Move to folder / tags">
+                        <FolderIcon className="w-4 h-4" />
+                      </button>
                       <button onClick={() => openOriginal(doc)} className={iconBtn} title="View original file">
                         <ArrowTopRightOnSquareIcon className="w-4 h-4" />
                       </button>
@@ -241,6 +331,16 @@ export default function Dashboard() {
         onConfirm={handleDelete}
         onCancel={() => setConfirmDoc(null)}
       />
+
+      {organizeDoc && (
+        <OrganizeDialog
+          doc={organizeDoc}
+          folders={folders}
+          tags={tags}
+          onClose={() => setOrganizeDoc(null)}
+          onChanged={handleOrganizeChanged}
+        />
+      )}
     </div>
   );
 }

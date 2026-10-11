@@ -3,12 +3,14 @@ import { useParams, useNavigate } from 'react-router-dom';
 import api, { mediaUrl } from '../services/api';
 import {
   ClockIcon, ArrowTopRightOnSquareIcon, ArrowDownTrayIcon,
-  PrinterIcon, ArrowPathIcon, TrashIcon, ArrowLeftIcon
+  PrinterIcon, ArrowPathIcon, TrashIcon, ArrowLeftIcon,
+  FolderIcon, TagIcon
 } from '@heroicons/react/24/outline';
 import { format } from 'date-fns';
 import toast from 'react-hot-toast';
 import Thumbnail from '../components/Thumbnail';
 import ConfirmDialog from '../components/ConfirmDialog';
+import OrganizeDialog, { tagColor } from '../components/OrganizeDialog';
 
 const statusStyle = {
   completed: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300',
@@ -24,6 +26,9 @@ export default function DocumentView() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [organizeOpen, setOrganizeOpen] = useState(false);
+  const [folders, setFolders] = useState([]);
+  const [tags, setTags] = useState([]);
 
   const fetchDoc = async () => {
     try {
@@ -34,6 +39,11 @@ export default function DocumentView() {
     }
     setLoading(false);
   };
+
+  useEffect(() => {
+    api.get('/folders').then((r) => setFolders(r.data)).catch(() => {});
+    api.get('/tags').then((r) => setTags(r.data)).catch(() => {});
+  }, []);
 
   useEffect(() => { fetchDoc(); }, [id]);
 
@@ -128,6 +138,31 @@ export default function DocumentView() {
               {format(new Date(doc.created_at), 'PPP')} | {doc.file_type.toUpperCase()} | {(doc.file_size / 1024 / 1024).toFixed(2)} MB | {doc.page_count} Pages
             </p>
 
+            <button
+              onClick={() => setOrganizeOpen(true)}
+              className="mt-4 inline-flex items-center px-3 py-1.5 text-sm font-medium text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 rounded-xl hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+            >
+              <FolderIcon className="w-4 h-4 mr-2" />
+              Organize
+            </button>
+
+            {(doc.folder || (doc.tags && doc.tags.length > 0)) && (
+              <div className="flex flex-wrap items-center gap-2 mt-4">
+                {doc.folder && (
+                  <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-primary-50 text-primary-700 dark:bg-primary-500/10 dark:text-primary-300">
+                    <FolderIcon className="w-3.5 h-3.5 mr-1.5" />
+                    {doc.folder.name}
+                  </span>
+                )}
+                {(doc.tags || []).map((t) => (
+                  <span key={t.id} className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${tagColor(t.name)}`}>
+                    <TagIcon className="w-3.5 h-3.5 mr-1.5" />
+                    {t.name}
+                  </span>
+                ))}
+              </div>
+            )}
+
             <div className="flex items-center justify-between mt-5">
               <div className="flex items-center space-x-2">
                 <span className="text-sm font-medium text-gray-600 dark:text-gray-300">OCR Status:</span>
@@ -165,6 +200,20 @@ export default function DocumentView() {
         onConfirm={handleDelete}
         onCancel={() => setConfirmOpen(false)}
       />
+
+      {organizeOpen && (
+        <OrganizeDialog
+          doc={doc}
+          folders={folders}
+          tags={tags}
+          onClose={() => setOrganizeOpen(false)}
+          onChanged={() => {
+            fetchDoc();
+            api.get('/folders').then((r) => setFolders(r.data)).catch(() => {});
+            api.get('/tags').then((r) => setTags(r.data)).catch(() => {});
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -1,10 +1,21 @@
 import time
 import logging
+from sqlalchemy import text
 from sqlalchemy.exc import OperationalError
 from app.database import engine, Base
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# create_all() never alters existing tables, so upgrades for databases created
+# before the folders/tags feature must be applied by hand.
+MIGRATIONS = [
+    """
+    ALTER TABLE documents
+        ADD COLUMN IF NOT EXISTS folder_id UUID
+        REFERENCES folders(id) ON DELETE SET NULL
+    """,
+]
 
 def init_db():
     retries = 5
@@ -12,6 +23,9 @@ def init_db():
         try:
             logger.info("Attempting to connect to the database and create tables...")
             Base.metadata.create_all(bind=engine)
+            with engine.begin() as conn:
+                for migration in MIGRATIONS:
+                    conn.execute(text(migration))
             logger.info("Database tables created successfully.")
             return
         except OperationalError as e:

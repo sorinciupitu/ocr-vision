@@ -6,6 +6,7 @@ A modern, Dockerized web application for archiving physical documents and search
 
 - 🔐 **Authentication**: User login and registration system.
 - 📤 **Document Scanning/Upload**: Drag-and-drop interface for uploading PDF, DOCX, and image files.
+- 📁 **Folders & Tags**: Create your own folders and tags, file processed documents into them, and filter the dashboard by folder or tag. New uploads land straight in the folder you are viewing.
 - 📁 **Background Sync Folders**: Mount a local folder and scan existing files directly into the database.
 - 🧠 **Advanced OCR**: Built-in support for `lightonai/LightOnOCR-3-4B` served via vLLM for fast, GPU-accelerated text extraction.
 - 🔍 **Full-Text Search**: Powered by PostgreSQL full-text search (`tsvector`), allowing fast lookups across massive text archives.
@@ -53,5 +54,7 @@ A modern, Dockerized web application for archiving physical documents and search
    Drag and drop files to manually upload and begin the OCR process.
 3. **Sync Folders**:
    Add a local folder tracking path (`/app/local_sync` is mapped to `./sample_documents` by default in docker-compose). Click **Scan** to ingest everything the folder holds.
-4. **Search**:
+4. **Organize**:
+   Create folders from the sidebar (or the *Organize* dialog on any document), assign documents to a folder, and toggle or create tags. Click a folder in the sidebar or a tag chip to filter the dashboard; uploads made while filtered are filed automatically.
+5. **Search**:
    Use the search functionality to find exact phrases or keywords pulled natively from your OCR-processed documents.
