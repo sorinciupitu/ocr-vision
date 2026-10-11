@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
+import ThemeToggle from '../components/ThemeToggle';
 
 export default function Login() {
   const [isLogin, setIsLogin] = useState(true);
@@ -29,25 +30,30 @@ export default function Login() {
     }
   };
 
+  const inputClass = 'mt-1 block w-full px-4 py-2.5 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:bg-white dark:focus:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm';
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-primary-500 to-primary-700 py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full bg-white p-10 rounded-3xl shadow-xl">
+    <div className="relative min-h-screen flex items-center justify-center bg-gradient-to-br from-primary-500 to-primary-700 py-12 px-4 sm:px-6 lg:px-8">
+      <div className="absolute top-4 right-4">
+        <ThemeToggle className="text-white/80 hover:bg-white/10 hover:text-white" />
+      </div>
+      <div className="max-w-md w-full bg-white dark:bg-gray-900 p-10 rounded-3xl shadow-xl">
         <div className="flex flex-col items-center mb-8">
-          <img src="/logo.png" alt="DOC-ARCHIVE" className="h-16 w-16 object-contain mb-4" />
-          <h1 className="text-2xl font-extrabold text-gray-900 tracking-tight">DOC-ARCHIVE</h1>
-          <h2 className="mt-1 text-sm text-gray-500">
+          <img src="/logo.png" alt="DocManager" className="h-16 w-16 object-contain mb-4" />
+          <h1 className="text-2xl font-extrabold text-gray-900 dark:text-gray-100 tracking-tight">DocManager</h1>
+          <h2 className="mt-1 text-sm text-gray-500 dark:text-gray-400">
             {isLogin ? 'Sign in to your account' : 'Create an account'}
           </h2>
         </div>
 
         <form className="space-y-5" onSubmit={handleSubmit}>
           <div>
-            <label className="block text-sm font-medium text-gray-700">Username</label>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Username</label>
             <input
               name="username"
               type="text"
               required
-              className="mt-1 block w-full px-4 py-2.5 border border-gray-200 rounded-xl bg-gray-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm"
+              className={inputClass}
               value={username}
               onChange={e => setUsername(e.target.value)}
             />
@@ -55,12 +61,12 @@ export default function Login() {
 
           {!isLogin && (
             <div>
-              <label className="block text-sm font-medium text-gray-700">Email address</label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Email address</label>
               <input
                 name="email"
                 type="email"
                 required
-                className="mt-1 block w-full px-4 py-2.5 border border-gray-200 rounded-xl bg-gray-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm"
+                className={inputClass}
                 value={email}
                 onChange={e => setEmail(e.target.value)}
               />
@@ -68,12 +74,12 @@ export default function Login() {
           )}
 
           <div>
-            <label className="block text-sm font-medium text-gray-700">Password</label>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Password</label>
             <input
               name="password"
               type="password"
               required
-              className="mt-1 block w-full px-4 py-2.5 border border-gray-200 rounded-xl bg-gray-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm"
+              className={inputClass}
               value={password}
               onChange={e => setPassword(e.target.value)}
             />
@@ -89,7 +95,7 @@ export default function Login() {
           <div className="text-center">
             <button
               type="button"
-              className="font-medium text-primary-600 hover:text-primary-500 text-sm"
+              className="font-medium text-primary-600 dark:text-primary-400 hover:text-primary-500 text-sm"
               onClick={() => setIsLogin(!isLogin)}
             >
               {isLogin ? 'Need an account? Sign up' : 'Already have an account? Sign in'}

@@ -13,10 +13,10 @@ import Thumbnail from '../components/Thumbnail';
 import ConfirmDialog from '../components/ConfirmDialog';
 
 const statusStyle = {
-  completed: 'bg-emerald-100 text-emerald-700',
-  processing: 'bg-amber-100 text-amber-700',
-  failed: 'bg-red-100 text-red-700',
-  pending: 'bg-gray-100 text-gray-600',
+  completed: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300',
+  processing: 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300',
+  failed: 'bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-300',
+  pending: 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300',
 };
 
 export default function Dashboard() {
@@ -110,11 +110,14 @@ export default function Dashboard() {
     { label: 'Sync folders', desc: 'Index files from a local directory', icon: FolderArrowDownIcon, onClick: () => navigate('/sync') },
   ];
 
+  const cardClass = 'bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 shadow-sm';
+  const iconBtn = 'text-gray-400 dark:text-gray-500 hover:text-primary-600 p-1.5 rounded-full hover:bg-primary-50 dark:hover:bg-gray-800 transition-colors';
+
   return (
     <div className="space-y-8">
       {/* Get started */}
       <div className="bg-gradient-to-br from-primary-500 to-primary-700 rounded-3xl p-8 text-white shadow-sm">
-        <h2 className="text-2xl font-bold tracking-tight">Get started with DOC-ARCHIVE</h2>
+        <h2 className="text-2xl font-bold tracking-tight">Get started with DocManager</h2>
         <p className="text-primary-100 mt-1 text-sm">Scan, archive and search your documents with OCR.</p>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-6">
           {quickActions.map((action) => {
@@ -146,26 +149,28 @@ export default function Dashboard() {
       <div
         {...getRootProps()}
         className={`flex flex-col items-center justify-center p-8 border-2 border-dashed rounded-2xl cursor-pointer transition-colors ${
-          isDragActive ? 'border-primary-500 bg-primary-50' : 'border-gray-300 bg-white hover:bg-gray-50 hover:border-gray-400'
+          isDragActive
+            ? 'border-primary-500 bg-primary-50 dark:bg-primary-500/10'
+            : 'border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800 hover:border-gray-400'
         }`}
       >
         <input {...getInputProps()} />
-        <CloudArrowUpIcon className="w-10 h-10 text-gray-400 mb-3" />
-        <p className="font-medium text-gray-700">
+        <CloudArrowUpIcon className="w-10 h-10 text-gray-400 dark:text-gray-500 mb-3" />
+        <p className="font-medium text-gray-700 dark:text-gray-200">
           {isDragActive ? "Drop the files here..." : "Drag & drop files here, or click to select"}
         </p>
-        <p className="text-sm text-gray-500 mt-1">Supports PDF, DOCX, PNG, JPG, JPEG, TIFF (Max 50MB)</p>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Supports PDF, DOCX, PNG, JPG, JPEG, TIFF (Max 50MB)</p>
         {uploading && <div className="mt-3 text-primary-600 font-medium animate-pulse">Uploading...</div>}
       </div>
 
       {/* Recent archives */}
       <div>
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold text-gray-900">Recent Archives</h3>
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Recent Archives</h3>
           <select
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value)}
-            className="text-sm border border-gray-200 rounded-xl px-3 py-2 bg-white text-gray-600 focus:outline-none focus:ring-2 focus:ring-primary-500"
+            className="text-sm border border-gray-200 dark:border-gray-700 rounded-xl px-3 py-2 bg-white dark:bg-gray-900 text-gray-600 dark:text-gray-300 focus:outline-none focus:ring-2 focus:ring-primary-500"
           >
             <option value="recent">Sort By: Recent</option>
             <option value="name">Sort By: Name</option>
@@ -174,33 +179,31 @@ export default function Dashboard() {
         </div>
 
         {sortedDocuments.length === 0 ? (
-          <div className="bg-white rounded-2xl border border-gray-100 p-16 text-center text-gray-500">
-            <DocumentMagnifyingGlassIcon className="w-12 h-12 mx-auto text-gray-300 mb-3" />
+          <div className={`${cardClass} p-16 text-center text-gray-500 dark:text-gray-400`}>
+            <DocumentMagnifyingGlassIcon className="w-12 h-12 mx-auto text-gray-300 dark:text-gray-600 mb-3" />
             <p>No documents archived yet.</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5">
             {sortedDocuments.map((doc) => (
-              <div key={doc.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow overflow-hidden flex flex-col">
+              <div key={doc.id} className={`${cardClass} hover:shadow-md transition-shadow overflow-hidden flex flex-col`}>
                 <button
                   type="button"
                   onClick={() => navigate(`/document/${doc.id}`)}
                   className="block w-full"
                 >
-                  <Thumbnail document={doc} className="w-full h-40 rounded-none border-b border-gray-100" />
+                  <Thumbnail document={doc} className="w-full h-40 rounded-none border-b border-gray-100 dark:border-gray-800" />
                 </button>
                 <div className="p-4 flex flex-col flex-1">
-                  <div className="flex items-start justify-between gap-2">
-                    <button
-                      type="button"
-                      onClick={() => navigate(`/document/${doc.id}`)}
-                      className="text-sm font-semibold text-gray-900 hover:text-primary-600 text-left truncate"
-                      title={doc.original_filename}
-                    >
-                      {doc.original_filename}
-                    </button>
-                  </div>
-                  <p className="text-xs text-gray-500 mt-1">
+                  <button
+                    type="button"
+                    onClick={() => navigate(`/document/${doc.id}`)}
+                    className="text-sm font-semibold text-gray-900 dark:text-gray-100 hover:text-primary-600 text-left truncate"
+                    title={doc.original_filename}
+                  >
+                    {doc.original_filename}
+                  </button>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                     {format(new Date(doc.created_at), 'PP')} • {(doc.file_size / 1024 / 1024).toFixed(2)} MB • {doc.page_count} pg
                   </p>
                   <div className="mt-3 flex items-center justify-between">
@@ -208,16 +211,16 @@ export default function Dashboard() {
                       {doc.ocr_status}
                     </span>
                     <div className="flex items-center space-x-1">
-                      <button onClick={() => openOriginal(doc)} className="text-gray-400 hover:text-primary-600 p-1.5 rounded-full hover:bg-primary-50 transition-colors" title="View original file">
+                      <button onClick={() => openOriginal(doc)} className={iconBtn} title="View original file">
                         <ArrowTopRightOnSquareIcon className="w-4 h-4" />
                       </button>
-                      <button onClick={() => handleReprocess(doc)} disabled={busyId === doc.id} className="text-gray-400 hover:text-primary-600 p-1.5 rounded-full hover:bg-primary-50 transition-colors disabled:opacity-50" title="Reprocess OCR">
+                      <button onClick={() => handleReprocess(doc)} disabled={busyId === doc.id} className={`${iconBtn} disabled:opacity-50`} title="Reprocess OCR">
                         <ArrowPathIcon className={`w-4 h-4 ${busyId === doc.id ? 'animate-spin' : ''}`} />
                       </button>
-                      <button onClick={() => navigate(`/document/${doc.id}`)} className="text-gray-400 hover:text-primary-600 p-1.5 rounded-full hover:bg-primary-50 transition-colors" title="View details">
+                      <button onClick={() => navigate(`/document/${doc.id}`)} className={iconBtn} title="View details">
                         <EyeIcon className="w-4 h-4" />
                       </button>
-                      <button onClick={() => setConfirmDoc(doc)} className="text-gray-400 hover:text-red-600 p-1.5 rounded-full hover:bg-red-50 transition-colors" title="Delete document">
+                      <button onClick={() => setConfirmDoc(doc)} className="text-gray-400 dark:text-gray-500 hover:text-red-600 p-1.5 rounded-full hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors" title="Delete document">
                         <TrashIcon className="w-4 h-4" />
                       </button>
                     </div>

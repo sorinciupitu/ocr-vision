@@ -72,17 +72,19 @@ export default function Search() {
 
   const trimmed = query.trim();
   const tooShort = trimmed.length > 0 && trimmed.length < MIN_QUERY;
+  const cardClass = 'bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 shadow-sm';
+  const iconBtn = 'text-gray-400 dark:text-gray-500 hover:text-primary-600 p-1.5 rounded-full hover:bg-primary-50 dark:hover:bg-gray-800 transition-colors';
 
   return (
     <div className="space-y-8">
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-8">
-        <h2 className="text-2xl font-bold tracking-tight text-gray-900 mb-6">Search Documents</h2>
+      <div className={`${cardClass} p-8`}>
+        <h2 className="text-2xl font-bold tracking-tight text-gray-900 dark:text-gray-100 mb-6">Search Documents</h2>
         <div className="relative">
           <MagnifyingGlassIcon className="absolute left-4 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
           <input
             type="text"
             autoFocus
-            className="w-full pl-12 pr-12 py-3 border border-gray-200 rounded-xl bg-gray-50 focus:bg-white focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm"
+            className="w-full pl-12 pr-12 py-3 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:bg-white dark:focus:bg-gray-800 focus:ring-2 focus:ring-primary-500 focus:border-transparent text-sm"
             placeholder="Start typing to search across all archived documents..."
             value={query}
             onChange={e => setQuery(e.target.value)}
@@ -94,7 +96,7 @@ export default function Search() {
               <button
                 type="button"
                 onClick={() => setQuery('')}
-                className="p-1 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100 transition-colors"
+                className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
                 title="Clear"
               >
                 <XMarkIcon className="h-5 w-5" />
@@ -103,59 +105,59 @@ export default function Search() {
           </div>
         </div>
         {tooShort && (
-          <p className="text-xs text-gray-400 mt-2">Type at least {MIN_QUERY} characters...</p>
+          <p className="text-xs text-gray-400 dark:text-gray-500 mt-2">Type at least {MIN_QUERY} characters...</p>
         )}
       </div>
 
       {searched && !loading && (
         <div>
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
             {results.length} Result{results.length !== 1 ? 's' : ''} found
           </h3>
 
           {results.length === 0 ? (
-            <div className="bg-white rounded-2xl border border-gray-100 p-16 text-center text-gray-500">
-              <MagnifyingGlassIcon className="w-12 h-12 mx-auto text-gray-300 mb-3" />
+            <div className={`${cardClass} p-16 text-center text-gray-500 dark:text-gray-400`}>
+              <MagnifyingGlassIcon className="w-12 h-12 mx-auto text-gray-300 dark:text-gray-600 mb-3" />
               <p>No matching documents found.</p>
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5">
               {results.map((r, i) => (
-                <div key={i} className="bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow overflow-hidden flex flex-col">
+                <div key={i} className={`${cardClass} hover:shadow-md transition-shadow overflow-hidden flex flex-col`}>
                   <button
                     type="button"
                     onClick={() => navigate(`/document/${r.document.id}`)}
                     className="block w-full"
                   >
-                    <Thumbnail document={r.document} className="w-full h-40 rounded-none border-b border-gray-100" />
+                    <Thumbnail document={r.document} className="w-full h-40 rounded-none border-b border-gray-100 dark:border-gray-800" />
                   </button>
                   <div className="p-4 flex flex-col flex-1">
                     <button
                       type="button"
                       onClick={() => navigate(`/document/${r.document.id}`)}
-                      className="text-sm font-semibold text-gray-900 hover:text-primary-600 text-left truncate"
+                      className="text-sm font-semibold text-gray-900 dark:text-gray-100 hover:text-primary-600 text-left truncate"
                       title={r.document.original_filename}
                     >
                       {r.document.original_filename}
                     </button>
-                    <p className="text-xs text-gray-500 mt-1">
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                       {format(new Date(r.document.created_at), 'PP')} • {r.document.file_type.toUpperCase()}
                     </p>
                     <div
-                      className="text-xs text-gray-600 mt-3 line-clamp-3 bg-amber-50 rounded-lg p-3 border-l-4 border-amber-300"
+                      className="text-xs text-gray-600 dark:text-gray-300 mt-3 line-clamp-3 bg-amber-50 dark:bg-amber-500/10 rounded-lg p-3 border-l-4 border-amber-300 dark:border-amber-500"
                       dangerouslySetInnerHTML={{ __html: r.snippet }}
                     />
                     <div className="mt-auto pt-3 flex items-center justify-end space-x-1">
-                      <button onClick={() => navigate(`/document/${r.document.id}`)} className="text-gray-400 hover:text-primary-600 p-1.5 rounded-full hover:bg-primary-50 transition-colors" title="View details">
+                      <button onClick={() => navigate(`/document/${r.document.id}`)} className={iconBtn} title="View details">
                         <EyeIcon className="w-4 h-4" />
                       </button>
-                      <button onClick={() => openOriginal(r.document)} className="text-gray-400 hover:text-primary-600 p-1.5 rounded-full hover:bg-primary-50 transition-colors" title="View original file">
+                      <button onClick={() => openOriginal(r.document)} className={iconBtn} title="View original file">
                         <ArrowTopRightOnSquareIcon className="w-4 h-4" />
                       </button>
-                      <button onClick={() => downloadOriginal(r.document)} className="text-gray-400 hover:text-primary-600 p-1.5 rounded-full hover:bg-primary-50 transition-colors" title="Download">
+                      <button onClick={() => downloadOriginal(r.document)} className={iconBtn} title="Download">
                         <ArrowDownTrayIcon className="w-4 h-4" />
                       </button>
-                      <button onClick={() => printDocument(r.document)} className="text-gray-400 hover:text-primary-600 p-1.5 rounded-full hover:bg-primary-50 transition-colors" title="Print">
+                      <button onClick={() => printDocument(r.document)} className={iconBtn} title="Print">
                         <PrinterIcon className="w-4 h-4" />
                       </button>
                     </div>

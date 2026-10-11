@@ -12,7 +12,7 @@ export default function Thumbnail({ document, className = 'w-14 h-14' }) {
   const showImage = document.has_thumbnail && !failed;
 
   return (
-    <div className={`flex-shrink-0 flex items-center justify-center bg-gray-100 rounded-lg overflow-hidden ${className}`}>
+    <div className={`flex-shrink-0 flex items-center justify-center bg-gray-100 dark:bg-gray-800 rounded-lg overflow-hidden ${className}`}>
       {showImage ? (
         <img
           src={mediaUrl(`/documents/${document.id}/thumbnail`)}
@@ -21,7 +21,7 @@ export default function Thumbnail({ document, className = 'w-14 h-14' }) {
           onError={() => setFailed(true)}
         />
       ) : (
-        <DocumentIcon className="w-10 h-10 text-gray-300" />
+        <DocumentIcon className="w-10 h-10 text-gray-300 dark:text-gray-600" />
       )}
     </div>
   );

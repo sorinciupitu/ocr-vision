@@ -1,4 +1,5 @@
 import os
+import re
 import shutil
 from typing import List, Optional
 from uuid import UUID
@@ -137,15 +138,22 @@ def search_documents(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    # Prefix-match every word so partial input ("aut") already matches ("auto").
+    words = re.findall(r"\w+", query.lower())
+    if not words:
+        return []
+    tsquery = " & ".join(f"{w}:*" for w in words)
+
     sql = text("""
-        SELECT d.id, ts_headline('english', d.ocr_text, plainto_tsquery('english', :query)) as snippet,
-               ts_rank(d.search_vector, plainto_tsquery('english', :query)) as rank
+        SELECT d.id,
+               ts_headline('english', d.ocr_text, to_tsquery('english', :tsquery)) as snippet,
+               ts_rank(d.search_vector, to_tsquery('english', :tsquery)) as rank
         FROM documents d
-        WHERE d.owner_id = :owner_id AND d.search_vector @@ plainto_tsquery('english', :query)
+        WHERE d.owner_id = :owner_id AND d.search_vector @@ to_tsquery('english', :tsquery)
         ORDER BY rank DESC
         LIMIT 20
     """)
-    result = db.execute(sql, {"query": query, "owner_id": current_user.id}).fetchall()
+    result = db.execute(sql, {"tsquery": tsquery, "owner_id": current_user.id}).fetchall()
     
     search_results = []
     for r in result:

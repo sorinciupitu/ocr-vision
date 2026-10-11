@@ -8,6 +8,7 @@ import {
 } from '@heroicons/react/24/outline';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
+import ThemeToggle from './ThemeToggle';
 
 const navigation = [
   { name: 'Dashboard', href: '/', icon: DocumentPlusIcon },
@@ -31,7 +32,7 @@ function Layout() {
     api.get('/sync/folders').then((r) => setFolders(r.data)).catch(() => {});
   }, []);
 
-  if (loading) return <div className="min-h-screen flex items-center justify-center text-gray-500">Loading...</div>;
+  if (loading) return <div className="min-h-screen flex items-center justify-center text-gray-500 dark:text-gray-400 bg-[#f0f0f0] dark:bg-gray-950">Loading...</div>;
   if (!user) return <Navigate to="/login" replace />;
 
   const currentTitle = PAGE_TITLES[location.pathname] || 'Document';
@@ -56,12 +57,12 @@ function Layout() {
   };
 
   return (
-    <div className="min-h-screen bg-[#f0f0f0] flex">
+    <div className="min-h-screen bg-[#f0f0f0] dark:bg-gray-950 flex">
       {/* Sidebar */}
-      <aside className="w-64 bg-white hidden md:flex flex-col border-r border-gray-100">
+      <aside className="w-64 bg-white dark:bg-gray-900 hidden md:flex flex-col border-r border-gray-100 dark:border-gray-800">
         <div className="h-20 flex items-center gap-3 px-6">
-          <img src="/logo.png" alt="DOC-ARCHIVE" className="h-9 w-9 object-contain" />
-          <span className="text-lg font-extrabold tracking-tight text-gray-800">DOC-ARCHIVE</span>
+          <img src="/logo.png" alt="DocManager" className="h-9 w-9 object-contain" />
+          <span className="text-lg font-extrabold tracking-tight text-gray-800 dark:text-gray-100">DocManager</span>
         </div>
 
         <nav className="flex-1 px-4 py-4 space-y-1 overflow-y-auto">
@@ -73,7 +74,9 @@ function Layout() {
                 key={item.name}
                 onClick={() => navigate(item.href)}
                 className={`flex items-center w-full px-4 py-2.5 text-sm font-medium rounded-xl transition-colors ${
-                  active ? 'bg-primary-500 text-white shadow-sm' : 'text-gray-600 hover:bg-gray-100'
+                  active
+                    ? 'bg-primary-500 text-white shadow-sm'
+                    : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'
                 }`}
               >
                 <Icon className="w-5 h-5 mr-3" />
@@ -83,26 +86,26 @@ function Layout() {
           })}
 
           <div className="pt-6">
-            <p className="px-4 text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Folders</p>
+            <p className="px-4 text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-2">Folders</p>
             {folders.map((f, i) => (
               <button
                 key={f.id}
                 onClick={() => navigate('/sync')}
-                className="flex items-center w-full px-4 py-2 text-sm text-gray-600 rounded-xl hover:bg-gray-100 transition-colors"
+                className="flex items-center w-full px-4 py-2 text-sm text-gray-600 dark:text-gray-300 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
               >
                 <span className={`w-2.5 h-2.5 rounded-full mr-3 flex-shrink-0 ${FOLDER_COLORS[i % FOLDER_COLORS.length]}`} />
                 <span className="truncate">{f.label || f.path}</span>
               </button>
             ))}
             {folders.length === 0 && (
-              <p className="px-4 py-2 text-sm text-gray-400">No folders yet</p>
+              <p className="px-4 py-2 text-sm text-gray-400 dark:text-gray-500">No folders yet</p>
             )}
           </div>
         </nav>
 
-        <div className="p-4 border-t border-gray-100">
+        <div className="p-4 border-t border-gray-100 dark:border-gray-800">
           <Menu as="div" className="relative">
-            <Menu.Button className="flex items-center w-full px-3 py-2 text-sm font-medium text-gray-700 bg-gray-50 rounded-xl hover:bg-gray-100">
+            <Menu.Button className="flex items-center w-full px-3 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-gray-50 dark:bg-gray-800 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700">
               <span className="flex items-center justify-center w-8 h-8 rounded-full bg-primary-500 text-white text-xs font-bold mr-2 flex-shrink-0">
                 {user.username ? user.username.slice(0, 1).toUpperCase() : '?'}
               </span>
@@ -117,12 +120,12 @@ function Layout() {
               leaveFrom="transform opacity-100 scale-100"
               leaveTo="transform opacity-0 scale-95"
             >
-              <Menu.Items className="absolute right-0 bottom-full w-full mb-2 bg-white rounded-xl shadow-lg border border-gray-100 focus:outline-none overflow-hidden">
+              <Menu.Items className="absolute right-0 bottom-full w-full mb-2 bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-100 dark:border-gray-700 focus:outline-none overflow-hidden">
                 <Menu.Item>
                   {({ active }) => (
                     <button
                       onClick={logout}
-                      className={`${active ? 'bg-gray-50 text-gray-900' : 'text-gray-700'} flex items-center w-full px-4 py-2.5 text-sm`}
+                      className={`${active ? 'bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-gray-100' : 'text-gray-700 dark:text-gray-200'} flex items-center w-full px-4 py-2.5 text-sm`}
                     >
                       <ArrowRightOnRectangleIcon className="w-4 h-4 mr-2" />
                       Sign out
@@ -137,16 +140,17 @@ function Layout() {
 
       {/* Main */}
       <div className="flex-1 flex flex-col min-w-0">
-        <header className="h-20 bg-white/80 backdrop-blur border-b border-gray-100 flex items-center justify-between px-6 md:px-10 sticky top-0 z-30">
+        <header className="h-20 bg-white/80 dark:bg-gray-900/80 backdrop-blur border-b border-gray-100 dark:border-gray-800 flex items-center justify-between px-6 md:px-10 sticky top-0 z-30">
           <div className="flex items-center gap-3 min-w-0">
-            <img src="/logo.png" alt="DOC-ARCHIVE" className="h-8 w-8 object-contain md:hidden" />
-            <h1 className="text-xl font-bold text-gray-900 truncate">{currentTitle}</h1>
+            <img src="/logo.png" alt="DocManager" className="h-8 w-8 object-contain md:hidden" />
+            <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100 truncate">{currentTitle}</h1>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <ThemeToggle />
             <button
               type="button"
               onClick={() => navigate('/search')}
-              className="md:hidden p-2 text-gray-500 hover:text-primary-600 rounded-full hover:bg-gray-100 transition-colors"
+              className="md:hidden p-2 text-gray-500 dark:text-gray-400 hover:text-primary-600 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
               title="Search"
             >
               <MagnifyingGlassIcon className="w-6 h-6" />
@@ -180,7 +184,7 @@ function Layout() {
         <button
           type="button"
           onClick={() => navigate('/search')}
-          className="w-12 h-12 rounded-full bg-white shadow-lg border border-gray-200 text-gray-600 hover:text-primary-600 hover:bg-primary-50 flex items-center justify-center transition-colors"
+          className="w-12 h-12 rounded-full bg-white dark:bg-gray-800 shadow-lg border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:text-primary-600 hover:bg-primary-50 dark:hover:bg-gray-700 flex items-center justify-center transition-colors"
           title="Search documents"
         >
           <MagnifyingGlassIcon className="w-6 h-6" />
