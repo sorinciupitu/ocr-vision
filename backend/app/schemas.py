@@ -32,6 +32,7 @@ class DocumentResponse(BaseModel):
     file_size: int
     page_count: int
     ocr_status: str
+    has_thumbnail: bool = False
     created_at: datetime
     
     class Config:

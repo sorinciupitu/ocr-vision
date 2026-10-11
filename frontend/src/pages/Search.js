@@ -1,8 +1,11 @@
 import React, { useState } from 'react';
-import api from '../services/api';
-import { MagnifyingGlassIcon, DocumentIcon } from '@heroicons/react/24/outline';
+import api, { mediaUrl } from '../services/api';
+import {
+  MagnifyingGlassIcon, ArrowTopRightOnSquareIcon, ArrowDownTrayIcon, PrinterIcon, EyeIcon
+} from '@heroicons/react/24/outline';
 import { useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
+import Thumbnail from '../components/Thumbnail';
 
 export default function Search() {
   const [query, setQuery] = useState('');
@@ -23,6 +26,23 @@ export default function Search() {
       console.error(err);
     }
     setLoading(false);
+  };
+
+  const openOriginal = (doc) => {
+    window.open(mediaUrl(`/documents/${doc.id}/file?disposition=inline`), '_blank', 'noopener');
+  };
+
+  const downloadOriginal = (doc) => {
+    const a = document.createElement('a');
+    a.href = mediaUrl(`/documents/${doc.id}/file?disposition=attachment`);
+    a.download = doc.original_filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  };
+
+  const printDocument = (doc) => {
+    window.open(`/document/${doc.id}/print`, '_blank', 'noopener');
   };
 
   return (
@@ -59,9 +79,13 @@ export default function Search() {
           </div>
           <ul className="divide-y divide-gray-200">
             {results.map((r, i) => (
-              <li key={i} className="p-6 hover:bg-gray-50 cursor-pointer" onClick={() => navigate(`/document/${r.document.id}`)}>
-                <div className="flex items-start space-x-4">
-                  <DocumentIcon className="h-8 w-8 text-gray-400 flex-shrink-0 mt-1" />
+              <li key={i} className="p-4 hover:bg-gray-50 flex items-start gap-4">
+                <button
+                  type="button"
+                  onClick={() => navigate(`/document/${r.document.id}`)}
+                  className="flex items-start space-x-4 min-w-0 flex-1 text-left"
+                >
+                  <Thumbnail document={r.document} className="w-14 h-14" />
                   <div className="min-w-0">
                     <p className="text-sm font-medium text-indigo-600">{r.document.original_filename}</p>
                     <p className="text-xs text-gray-500 mb-2">
@@ -71,6 +95,36 @@ export default function Search() {
                       dangerouslySetInnerHTML={{ __html: r.snippet }}
                     />
                   </div>
+                </button>
+                <div className="flex items-center space-x-1 flex-shrink-0">
+                  <button
+                    onClick={() => navigate(`/document/${r.document.id}`)}
+                    className="text-gray-400 hover:text-indigo-600 p-2 rounded-full hover:bg-indigo-50 transition-colors"
+                    title="View details"
+                  >
+                    <EyeIcon className="w-5 h-5" />
+                  </button>
+                  <button
+                    onClick={() => openOriginal(r.document)}
+                    className="text-gray-400 hover:text-indigo-600 p-2 rounded-full hover:bg-indigo-50 transition-colors"
+                    title="View original file"
+                  >
+                    <ArrowTopRightOnSquareIcon className="w-5 h-5" />
+                  </button>
+                  <button
+                    onClick={() => downloadOriginal(r.document)}
+                    className="text-gray-400 hover:text-indigo-600 p-2 rounded-full hover:bg-indigo-50 transition-colors"
+                    title="Download"
+                  >
+                    <ArrowDownTrayIcon className="w-5 h-5" />
+                  </button>
+                  <button
+                    onClick={() => printDocument(r.document)}
+                    className="text-gray-400 hover:text-indigo-600 p-2 rounded-full hover:bg-indigo-50 transition-colors"
+                    title="Print"
+                  >
+                    <PrinterIcon className="w-5 h-5" />
+                  </button>
                 </div>
               </li>
             ))}

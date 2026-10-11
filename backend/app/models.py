@@ -43,6 +43,10 @@ class Document(Base):
     owner = relationship("User", back_populates="documents")
     pages = relationship("DocumentPage", back_populates="document", cascade="all, delete-orphan")
 
+    @property
+    def has_thumbnail(self) -> bool:
+        return bool(self.thumbnail_path)
+
     __table_args__ = (
         Index("idx_documents_search", "search_vector", postgresql_using="gin"),
         Index("idx_documents_owner", "owner_id"),

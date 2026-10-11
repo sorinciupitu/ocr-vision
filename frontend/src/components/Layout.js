@@ -1,17 +1,38 @@
-import React from 'react';
-import { Navigate, Outlet } from 'react-router-dom';
+import React, { Fragment, useRef, useState } from 'react';
+import { Navigate, Outlet, useNavigate } from 'react-router-dom';
+import toast from 'react-hot-toast';
 import { useAuth } from '../contexts/AuthContext';
-import { Fragment } from 'react';
-import { Disclosure, Menu, Transition } from '@headlessui/react';
-import { MagnifyingGlassIcon, DocumentPlusIcon, FolderArrowDownIcon, ArrowRightOnRectangleIcon } from '@heroicons/react/24/outline';
-import { useNavigate } from 'react-router-dom';
+import { Menu, Transition } from '@headlessui/react';
+import { MagnifyingGlassIcon, DocumentPlusIcon, FolderArrowDownIcon, ArrowRightOnRectangleIcon, PlusIcon } from '@heroicons/react/24/outline';
+import api from '../services/api';
 
 function Layout() {
   const { user, loading, logout } = useAuth();
   const navigate = useNavigate();
+  const fileInputRef = useRef(null);
+  const [uploading, setUploading] = useState(false);
 
   if (loading) return <div>Loading...</div>;
   if (!user) return <Navigate to="/login" replace />;
+
+  const handleUpload = async (e) => {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    const formData = new FormData();
+    formData.append('file', file);
+    setUploading(true);
+    try {
+      await api.post('/documents/upload', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      toast.success(`Uploaded ${file.name}`);
+      navigate('/');
+    } catch (err) {
+      toast.error(`Failed to upload ${file.name}`);
+    }
+    setUploading(false);
+  };
 
   const navigation = [
     { name: 'Dashboard', href: '/', icon: <DocumentPlusIcon className="w-5 h-5 mr-3" /> },
@@ -77,6 +98,34 @@ function Layout() {
         <main className="flex-1 p-6 md:p-10 max-w-6xl w-full mx-auto">
           <Outlet />
         </main>
+      </div>
+
+      {/* Floating action buttons */}
+      <div className="fixed bottom-6 right-6 flex flex-col items-end space-y-3 z-40">
+        <button
+          type="button"
+          onClick={() => navigate('/search')}
+          className="w-12 h-12 rounded-full bg-white shadow-lg border border-gray-200 text-gray-600 hover:text-indigo-600 hover:bg-indigo-50 flex items-center justify-center transition-colors"
+          title="Search documents"
+        >
+          <MagnifyingGlassIcon className="w-6 h-6" />
+        </button>
+        <button
+          type="button"
+          onClick={() => fileInputRef.current && fileInputRef.current.click()}
+          disabled={uploading}
+          className="w-14 h-14 rounded-full bg-indigo-600 text-white shadow-lg hover:bg-indigo-700 flex items-center justify-center transition-colors disabled:opacity-60"
+          title="Add new document"
+        >
+          <PlusIcon className={`w-7 h-7 ${uploading ? 'animate-pulse' : ''}`} />
+        </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".pdf,.png,.jpg,.jpeg,.tiff,.bmp,.docx"
+          className="hidden"
+          onChange={handleUpload}
+        />
       </div>
     </div>
   );

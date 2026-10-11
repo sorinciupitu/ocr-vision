@@ -12,4 +12,12 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+// Build an authenticated URL for media that the browser loads directly
+// (<img>, new tab, download link) and that therefore cannot set a header.
+export const mediaUrl = (path) => {
+  const token = localStorage.getItem('token');
+  const separator = path.includes('?') ? '&' : '?';
+  return `/api${path}${separator}token=${encodeURIComponent(token || '')}`;
+};
+
 export default api;

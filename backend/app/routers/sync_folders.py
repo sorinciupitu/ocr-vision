@@ -13,7 +13,7 @@ from app.database import get_db
 from app.models import User, Document, DocumentPage, SyncFolder
 from app.dependencies import get_current_user
 from app.config import get_settings
-from app.ocr_service import process_file
+from app.ocr_service import process_file, create_thumbnail
 from app.schemas import DocumentResponse
 
 router = APIRouter(prefix="/sync", tags=["sync"])
@@ -64,6 +64,15 @@ async def ingest_file(file_path: str, owner_id: UUID, db: Session):
         db.add(doc)
         db.commit()
         db.refresh(doc)
+
+        thumb_path = os.path.join(settings.upload_folder, "thumbnails", f"{doc.id}.png")
+        try:
+            os.makedirs(os.path.dirname(thumb_path), exist_ok=True)
+            if create_thumbnail(file_path, thumb_path):
+                doc.thumbnail_path = thumb_path
+                db.commit()
+        except Exception as e:
+            print(f"Error creating thumbnail for {file_path}: {e}")
 
         full_text, page_count, page_texts = await process_file(file_path)
 

@@ -7,6 +7,7 @@ import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Search from './pages/Search';
 import DocumentView from './pages/DocumentView';
+import PrintView from './pages/PrintView';
 import SyncFolders from './pages/SyncFolders';
 
 function App() {
@@ -16,6 +17,7 @@ function App() {
         <Toaster position="top-right" />
         <Routes>
           <Route path="/login" element={<Login />} />
+          <Route path="/document/:id/print" element={<PrintView />} />
           <Route element={<Layout />}>
             <Route path="/" element={<Dashboard />} />
             <Route path="/search" element={<Search />} />
