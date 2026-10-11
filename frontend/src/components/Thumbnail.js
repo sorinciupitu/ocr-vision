@@ -21,7 +21,7 @@ export default function Thumbnail({ document, className = 'w-14 h-14' }) {
           onError={() => setFailed(true)}
         />
       ) : (
-        <DocumentIcon className="w-6 h-6 text-gray-400" />
+        <DocumentIcon className="w-10 h-10 text-gray-300" />
       )}
     </div>
   );

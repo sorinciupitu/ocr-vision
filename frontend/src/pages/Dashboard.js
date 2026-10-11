@@ -1,25 +1,23 @@
-import React, { useCallback, useState, useEffect } from 'react';
+import React, { useCallback, useMemo, useRef, useState, useEffect } from 'react';
 import { useDropzone } from 'react-dropzone';
 import api, { mediaUrl } from '../services/api';
 import toast from 'react-hot-toast';
 import { format } from 'date-fns';
 import {
   CloudArrowUpIcon, EyeIcon, DocumentMagnifyingGlassIcon,
-  ArrowPathIcon, TrashIcon, ArrowTopRightOnSquareIcon
+  ArrowPathIcon, TrashIcon, ArrowTopRightOnSquareIcon,
+  MagnifyingGlassIcon, FolderArrowDownIcon, ArrowUpTrayIcon
 } from '@heroicons/react/24/outline';
 import { useNavigate } from 'react-router-dom';
 import Thumbnail from '../components/Thumbnail';
 import ConfirmDialog from '../components/ConfirmDialog';
 
-const statusBadge = (status) => (
-  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium 
-    ${status === 'completed' ? 'bg-green-100 text-green-800' : 
-      status === 'processing' ? 'bg-yellow-100 text-yellow-800' : 
-      status === 'failed' ? 'bg-red-100 text-red-800' : 
-      'bg-gray-100 text-gray-800'}`}>
-    {status}
-  </span>
-);
+const statusStyle = {
+  completed: 'bg-emerald-100 text-emerald-700',
+  processing: 'bg-amber-100 text-amber-700',
+  failed: 'bg-red-100 text-red-700',
+  pending: 'bg-gray-100 text-gray-600',
+};
 
 export default function Dashboard() {
   const [documents, setDocuments] = useState([]);
@@ -27,7 +25,9 @@ export default function Dashboard() {
   const [busyId, setBusyId] = useState(null);
   const [confirmDoc, setConfirmDoc] = useState(null);
   const [deleting, setDeleting] = useState(false);
+  const [sortBy, setSortBy] = useState('recent');
   const navigate = useNavigate();
+  const heroInputRef = useRef(null);
 
   const fetchDocuments = async () => {
     try {
@@ -44,9 +44,10 @@ export default function Dashboard() {
     return () => clearInterval(interval);
   }, []);
 
-  const onDrop = useCallback(async (acceptedFiles) => {
+  const uploadFiles = useCallback(async (files) => {
+    if (!files || files.length === 0) return;
     setUploading(true);
-    for (const file of acceptedFiles) {
+    for (const file of files) {
       const formData = new FormData();
       formData.append('file', file);
       try {
@@ -61,6 +62,17 @@ export default function Dashboard() {
     setUploading(false);
     fetchDocuments();
   }, []);
+
+  const onDrop = useCallback((acceptedFiles) => uploadFiles(acceptedFiles), [uploadFiles]);
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({ onDrop });
+
+  const sortedDocuments = useMemo(() => {
+    const list = [...documents];
+    if (sortBy === 'name') list.sort((a, b) => a.original_filename.localeCompare(b.original_filename));
+    else if (sortBy === 'status') list.sort((a, b) => a.ocr_status.localeCompare(b.ocr_status));
+    else list.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    return list;
+  }, [documents, sortBy]);
 
   const handleReprocess = async (doc) => {
     setBusyId(doc.id);
@@ -92,93 +104,129 @@ export default function Dashboard() {
     window.open(mediaUrl(`/documents/${doc.id}/file?disposition=inline`), '_blank', 'noopener');
   };
 
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({ onDrop });
+  const quickActions = [
+    { label: 'Upload documents', desc: 'Add PDFs or images to the archive', icon: ArrowUpTrayIcon, onClick: () => heroInputRef.current && heroInputRef.current.click() },
+    { label: 'Search archive', desc: 'Full-text search across OCR text', icon: MagnifyingGlassIcon, onClick: () => navigate('/search') },
+    { label: 'Sync folders', desc: 'Index files from a local directory', icon: FolderArrowDownIcon, onClick: () => navigate('/sync') },
+  ];
 
   return (
     <div className="space-y-8">
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
-        <h2 className="text-2xl font-bold tracking-tight text-gray-900 mb-6">Scan New Document</h2>
-        
-        <div 
-          {...getRootProps()} 
-          className={`flex flex-col items-center justify-center p-12 border-2 border-dashed rounded-xl cursor-pointer transition-colors ${
-            isDragActive ? 'border-indigo-500 bg-indigo-50' : 'border-gray-300 bg-gray-50 hover:bg-gray-100 hover:border-gray-400'
-          }`}
-        >
-          <input {...getInputProps()} />
-          <CloudArrowUpIcon className="w-12 h-12 text-gray-400 mb-4" />
-          <p className="text-lg font-medium text-gray-700">
-            {isDragActive ? "Drop the files here..." : "Drag & drop files here, or click to select"}
-          </p>
-          <p className="text-sm text-gray-500 mt-2">
-            Supports PDF, DOCX, PNG, JPG, JPEG, TIFF (Max 50MB)
-          </p>
-          {uploading && <div className="mt-4 text-indigo-600 font-medium animate-pulse">Uploading...</div>}
+      {/* Get started */}
+      <div className="bg-gradient-to-br from-primary-500 to-primary-700 rounded-3xl p-8 text-white shadow-sm">
+        <h2 className="text-2xl font-bold tracking-tight">Get started with DOC-ARCHIVE</h2>
+        <p className="text-primary-100 mt-1 text-sm">Scan, archive and search your documents with OCR.</p>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-6">
+          {quickActions.map((action) => {
+            const Icon = action.icon;
+            return (
+              <button
+                key={action.label}
+                onClick={action.onClick}
+                className="text-left bg-white/10 hover:bg-white/20 rounded-2xl p-4 transition-colors"
+              >
+                <Icon className="w-6 h-6 mb-2" />
+                <p className="font-semibold text-sm">{action.label}</p>
+                <p className="text-xs text-primary-100 mt-0.5">{action.desc}</p>
+              </button>
+            );
+          })}
         </div>
+        <input
+          ref={heroInputRef}
+          type="file"
+          multiple
+          accept=".pdf,.png,.jpg,.jpeg,.tiff,.bmp,.docx"
+          className="hidden"
+          onChange={(e) => { uploadFiles(e.target.files); e.target.value = ''; }}
+        />
       </div>
 
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-        <div className="px-6 py-5 border-b border-gray-200">
-          <h3 className="text-lg leading-6 font-medium text-gray-900">Recent Archives</h3>
+      {/* Dropzone */}
+      <div
+        {...getRootProps()}
+        className={`flex flex-col items-center justify-center p-8 border-2 border-dashed rounded-2xl cursor-pointer transition-colors ${
+          isDragActive ? 'border-primary-500 bg-primary-50' : 'border-gray-300 bg-white hover:bg-gray-50 hover:border-gray-400'
+        }`}
+      >
+        <input {...getInputProps()} />
+        <CloudArrowUpIcon className="w-10 h-10 text-gray-400 mb-3" />
+        <p className="font-medium text-gray-700">
+          {isDragActive ? "Drop the files here..." : "Drag & drop files here, or click to select"}
+        </p>
+        <p className="text-sm text-gray-500 mt-1">Supports PDF, DOCX, PNG, JPG, JPEG, TIFF (Max 50MB)</p>
+        {uploading && <div className="mt-3 text-primary-600 font-medium animate-pulse">Uploading...</div>}
+      </div>
+
+      {/* Recent archives */}
+      <div>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold text-gray-900">Recent Archives</h3>
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value)}
+            className="text-sm border border-gray-200 rounded-xl px-3 py-2 bg-white text-gray-600 focus:outline-none focus:ring-2 focus:ring-primary-500"
+          >
+            <option value="recent">Sort By: Recent</option>
+            <option value="name">Sort By: Name</option>
+            <option value="status">Sort By: Status</option>
+          </select>
         </div>
-        
-        <ul className="divide-y divide-gray-200">
-          {documents.map((doc) => (
-            <li key={doc.id} className="p-4 hover:bg-gray-50 flex items-center justify-between gap-4">
-              <button
-                type="button"
-                onClick={() => navigate(`/document/${doc.id}`)}
-                className="flex items-center space-x-4 min-w-0 flex-1 text-left"
-              >
-                <Thumbnail document={doc} className="w-14 h-14" />
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-indigo-600 truncate">{doc.original_filename}</p>
-                  <p className="text-xs text-gray-500">
-                    {format(new Date(doc.created_at), 'PPP')} • {(doc.file_size / 1024 / 1024).toFixed(2)} MB • {doc.page_count} Pages
-                  </p>
-                </div>
-              </button>
-              <div className="flex items-center space-x-1 flex-shrink-0">
-                {statusBadge(doc.ocr_status)}
+
+        {sortedDocuments.length === 0 ? (
+          <div className="bg-white rounded-2xl border border-gray-100 p-16 text-center text-gray-500">
+            <DocumentMagnifyingGlassIcon className="w-12 h-12 mx-auto text-gray-300 mb-3" />
+            <p>No documents archived yet.</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5">
+            {sortedDocuments.map((doc) => (
+              <div key={doc.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow overflow-hidden flex flex-col">
                 <button
-                  onClick={() => openOriginal(doc)}
-                  className="text-gray-400 hover:text-indigo-600 p-2 rounded-full hover:bg-indigo-50 transition-colors"
-                  title="View original file"
-                >
-                  <ArrowTopRightOnSquareIcon className="w-5 h-5" />
-                </button>
-                <button
-                  onClick={() => handleReprocess(doc)}
-                  disabled={busyId === doc.id}
-                  className="text-gray-400 hover:text-indigo-600 p-2 rounded-full hover:bg-indigo-50 transition-colors disabled:opacity-50"
-                  title="Reprocess OCR"
-                >
-                  <ArrowPathIcon className={`w-5 h-5 ${busyId === doc.id ? 'animate-spin' : ''}`} />
-                </button>
-                <button
+                  type="button"
                   onClick={() => navigate(`/document/${doc.id}`)}
-                  className="text-gray-400 hover:text-indigo-600 p-2 rounded-full hover:bg-indigo-50 transition-colors"
-                  title="View Details"
+                  className="block w-full"
                 >
-                  <EyeIcon className="w-5 h-5" />
+                  <Thumbnail document={doc} className="w-full h-40 rounded-none border-b border-gray-100" />
                 </button>
-                <button
-                  onClick={() => setConfirmDoc(doc)}
-                  className="text-gray-400 hover:text-red-600 p-2 rounded-full hover:bg-red-50 transition-colors"
-                  title="Delete document"
-                >
-                  <TrashIcon className="w-5 h-5" />
-                </button>
+                <div className="p-4 flex flex-col flex-1">
+                  <div className="flex items-start justify-between gap-2">
+                    <button
+                      type="button"
+                      onClick={() => navigate(`/document/${doc.id}`)}
+                      className="text-sm font-semibold text-gray-900 hover:text-primary-600 text-left truncate"
+                      title={doc.original_filename}
+                    >
+                      {doc.original_filename}
+                    </button>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-1">
+                    {format(new Date(doc.created_at), 'PP')} • {(doc.file_size / 1024 / 1024).toFixed(2)} MB • {doc.page_count} pg
+                  </p>
+                  <div className="mt-3 flex items-center justify-between">
+                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${statusStyle[doc.ocr_status] || statusStyle.pending}`}>
+                      {doc.ocr_status}
+                    </span>
+                    <div className="flex items-center space-x-1">
+                      <button onClick={() => openOriginal(doc)} className="text-gray-400 hover:text-primary-600 p-1.5 rounded-full hover:bg-primary-50 transition-colors" title="View original file">
+                        <ArrowTopRightOnSquareIcon className="w-4 h-4" />
+                      </button>
+                      <button onClick={() => handleReprocess(doc)} disabled={busyId === doc.id} className="text-gray-400 hover:text-primary-600 p-1.5 rounded-full hover:bg-primary-50 transition-colors disabled:opacity-50" title="Reprocess OCR">
+                        <ArrowPathIcon className={`w-4 h-4 ${busyId === doc.id ? 'animate-spin' : ''}`} />
+                      </button>
+                      <button onClick={() => navigate(`/document/${doc.id}`)} className="text-gray-400 hover:text-primary-600 p-1.5 rounded-full hover:bg-primary-50 transition-colors" title="View details">
+                        <EyeIcon className="w-4 h-4" />
+                      </button>
+                      <button onClick={() => setConfirmDoc(doc)} className="text-gray-400 hover:text-red-600 p-1.5 rounded-full hover:bg-red-50 transition-colors" title="Delete document">
+                        <TrashIcon className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
               </div>
-            </li>
-          ))}
-          {documents.length === 0 && (
-            <li className="p-12 text-center text-gray-500">
-              <DocumentMagnifyingGlassIcon className="w-12 h-12 mx-auto text-gray-400 mb-3" />
-              <p>No documents archived yet.</p>
-            </li>
-          )}
-        </ul>
+            ))}
+          </div>
+        )}
       </div>
 
       <ConfirmDialog
