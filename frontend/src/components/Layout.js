@@ -9,6 +9,7 @@ import {
 import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
 import ThemeToggle from './ThemeToggle';
+import SearchOverlay from './SearchOverlay';
 
 const navigation = [
   { name: 'Dashboard', href: '/', icon: DocumentPlusIcon },
@@ -38,6 +39,19 @@ function Layout() {
   const query = useQuery();
   const activeFolder = query.get('folder');
   const [dropTarget, setDropTarget] = useState(null);
+  const [searchOpen, setSearchOpen] = useState(false);
+
+  // Global shortcut: Cmd/Ctrl+K toggles the search overlay, like vite.dev.
+  useEffect(() => {
+    const onKey = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setSearchOpen((o) => !o);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   const fetchFolders = () => {
     api.get('/folders').then((r) => setFolders(r.data)).catch(() => {});
@@ -260,10 +274,20 @@ function Layout() {
             <h1 className="text-xl font-bold text-gray-900 dark:text-gray-100 truncate">{currentTitle}</h1>
           </div>
           <div className="flex items-center gap-2 sm:gap-3">
+            <button
+              type="button"
+              onClick={() => setSearchOpen(true)}
+              className="hidden md:inline-flex items-center gap-2 px-3 py-2 text-sm text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+              title="Search documents (Ctrl/⌘ + K)"
+            >
+              <MagnifyingGlassIcon className="w-4 h-4" />
+              <span>Search…</span>
+              <kbd className="inline-flex items-center justify-center min-w-[18px] px-1 py-0.5 text-[10px] font-medium bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded">⌘K</kbd>
+            </button>
             <ThemeToggle />
             <button
               type="button"
-              onClick={() => navigate('/search')}
+              onClick={() => setSearchOpen(true)}
               className="md:hidden p-2 text-gray-500 dark:text-gray-400 hover:text-primary-600 rounded-full hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
               title="Search"
             >
@@ -297,9 +321,9 @@ function Layout() {
       <div className="fixed bottom-6 right-6 flex flex-col items-end space-y-3 z-40">
         <button
           type="button"
-          onClick={() => navigate('/search')}
+          onClick={() => setSearchOpen(true)}
           className="w-12 h-12 rounded-full bg-white dark:bg-gray-800 shadow-lg border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:text-primary-600 hover:bg-primary-50 dark:hover:bg-gray-700 flex items-center justify-center transition-colors"
-          title="Search documents"
+          title="Search documents (Ctrl/⌘ + K)"
         >
           <MagnifyingGlassIcon className="w-6 h-6" />
         </button>
@@ -313,6 +337,8 @@ function Layout() {
           <PlusIcon className={`w-7 h-7 ${uploading ? 'animate-pulse' : ''}`} />
         </button>
       </div>
+
+      <SearchOverlay open={searchOpen} onClose={() => setSearchOpen(false)} />
     </div>
   );
 }

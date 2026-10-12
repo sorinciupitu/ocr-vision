@@ -14,8 +14,7 @@ from app.models import User, Document, DocumentPage, Tag, Folder
 from app.dependencies import get_current_user, get_current_user_media
 from app.schemas import DocumentResponse, DocumentDetailResponse, SearchResult, BulkDeleteRequest, BulkDeleteResult
 from app.config import get_settings
-from app.ocr_service import process_file, create_thumbnail
-from app.auto_tagging import apply_rules_to_document
+from app.ocr_runner import run_ocr_with_retries
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 settings = get_settings()
@@ -27,67 +26,8 @@ def _get_owned_document(document_id: UUID, db: Session, user: User) -> Document:
     ).first()
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
-    return doc
+    return doc# OCR (with retries/backoff and visible status) runs via app.ocr_runner.
 
-
-def _thumbnail_output_path(document_id: UUID) -> str:
-    thumbs_dir = os.path.join(settings.upload_folder, "thumbnails")
-    os.makedirs(thumbs_dir, exist_ok=True)
-    return os.path.join(thumbs_dir, f"{document_id}.png")
-
-
-def _generate_thumbnail(document_id: UUID, file_path: str) -> Optional[str]:
-    if not file_path or not os.path.exists(file_path):
-        return None
-    try:
-        return create_thumbnail(file_path, _thumbnail_output_path(document_id))
-    except Exception as e:
-        print(f"Error creating thumbnail for {document_id}: {e}")
-        return None
-
-
-async def process_document_background(document_id: UUID, file_path: str, db: Session):
-    """Background task to run OCR on a document."""
-    try:
-        db_doc = db.query(Document).filter(Document.id == document_id).first()
-        if not db_doc:
-            return
-
-        db_doc.ocr_status = "processing"
-        db.commit()
-
-        thumb = _generate_thumbnail(document_id, file_path)
-        if thumb:
-            db_doc.thumbnail_path = thumb
-            db.commit()
-
-        # Run OCR
-        full_text, page_count, page_texts = await process_file(file_path)
-
-        db_doc.ocr_text = full_text
-        db_doc.page_count = page_count
-        db_doc.ocr_status = "completed"
-        
-        # PostgreSQL Full-Text Search update
-        db_doc.search_vector = func.to_tsvector('english', full_text)
-
-        for i, text_content in enumerate(page_texts):
-            page = DocumentPage(
-                document_id=document_id,
-                page_number=i + 1,
-                ocr_text=text_content
-            )
-            db.add(page)
-
-        db.commit()
-        # Auto-tagging: rules run on every freshly completed document.
-        apply_rules_to_document(db, db_doc)
-    except Exception as e:
-        db_doc = db.query(Document).filter(Document.id == document_id).first()
-        if db_doc:
-            db_doc.ocr_status = "failed"
-            db.commit()
-        print(f"Error processing document {document_id}: {e}")
 
 
 @router.post("/upload", response_model=DocumentResponse)
@@ -128,7 +68,7 @@ async def upload_document(
     db.commit()
     db.refresh(new_doc)
 
-    background_tasks.add_task(process_document_background, new_doc.id, file_path, db)
+    background_tasks.add_task(run_ocr_with_retries, new_doc.id, db)
 
     return new_doc
 
@@ -165,17 +105,21 @@ def search_documents(
     if not words:
         return []
     tsquery = " & ".join(f"{w}:*" for w in words)
+    # Filename substring match, with LIKE wildcards escaped and matched literally.
+    like_term = "%" + re.sub(r"([%_\\])", r"\\\1", query.strip()) + "%"
 
     sql = text("""
         SELECT d.id,
                ts_headline('english', d.ocr_text, to_tsquery('english', :tsquery)) as snippet,
-               ts_rank(d.search_vector, to_tsquery('english', :tsquery)) as rank
+               COALESCE(ts_rank(d.search_vector, to_tsquery('english', :tsquery)), -1) as rank
         FROM documents d
-        WHERE d.owner_id = :owner_id AND d.search_vector @@ to_tsquery('english', :tsquery)
-        ORDER BY rank DESC
+        WHERE d.owner_id = :owner_id
+          AND (d.search_vector @@ to_tsquery('english', :tsquery)
+               OR d.original_filename ILIKE :like ESCAPE '\\')
+        ORDER BY rank DESC, d.created_at DESC
         LIMIT 20
     """)
-    result = db.execute(sql, {"tsquery": tsquery, "owner_id": current_user.id}).fetchall()
+    result = db.execute(sql, {"tsquery": tsquery, "like": like_term, "owner_id": current_user.id}).fetchall()
     
     search_results = []
     for r in result:
@@ -232,10 +176,35 @@ def reprocess_document(
     doc.ocr_text = ""
     doc.page_count = 0
     doc.ocr_status = "pending"
+    doc.ocr_attempts = 0
+    doc.ocr_error = None
     doc.search_vector = None
     db.commit()
 
-    background_tasks.add_task(process_document_background, doc.id, doc.file_path, db)
+    background_tasks.add_task(run_ocr_with_retries, doc.id, db)
+    return doc
+
+
+@router.post("/{document_id}/retry", response_model=DocumentResponse)
+def retry_document_ocr(
+    document_id: UUID,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Manually retry a failed (or stuck queued) document with a fresh set of attempts."""
+    doc = _get_owned_document(document_id, db, current_user)
+    if doc.ocr_status == "processing":
+        raise HTTPException(status_code=409, detail="Document is already being processed")
+    if doc.ocr_status == "completed":
+        raise HTTPException(status_code=409, detail="Document already processed; use reprocess to run OCR again")
+
+    doc.ocr_status = "pending"
+    doc.ocr_attempts = 0
+    doc.ocr_error = None
+    db.commit()
+
+    background_tasks.add_task(run_ocr_with_retries, doc.id, db)
     return doc
 
 

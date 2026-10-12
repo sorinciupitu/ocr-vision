@@ -10,3 +10,12 @@
     @apply bg-gray-950 text-gray-100;
   }
 }
+
+/* Search overlay snippets: ts_headline highlights matches with <b>/<mark>;
+   make the highlight typographic instead of the browser default. */
+.search-snippet mark,
+.search-snippet b {
+  background-color: transparent;
+  color: inherit;
+  font-weight: 700;
+}

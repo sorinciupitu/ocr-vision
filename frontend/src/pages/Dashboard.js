@@ -24,6 +24,13 @@ const statusStyle = {
   pending: 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300',
 };
 
+const statusLabel = {
+  completed: 'Completed',
+  processing: 'Processing…',
+  failed: 'Failed',
+  pending: 'Queued',
+};
+
 export default function Dashboard() {
   const [documents, setDocuments] = useState([]);
   const [folders, setFolders] = useState([]);
@@ -112,6 +119,18 @@ export default function Dashboard() {
       fetchDocuments();
     } catch (err) {
       toast.error('Failed to reprocess document');
+    }
+    setBusyId(null);
+  };
+
+  const handleRetry = async (doc) => {
+    setBusyId(doc.id);
+    try {
+      await api.post(`/documents/${doc.id}/retry`);
+      toast.success(`Retrying ${doc.original_filename}`);
+      fetchDocuments();
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Failed to retry document');
     }
     setBusyId(null);
   };
@@ -456,10 +475,30 @@ export default function Dashboard() {
                       ))}
                     </div>
                   )}
-                  <div className="mt-3 flex items-center justify-between">
-                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${statusStyle[doc.ocr_status] || statusStyle.pending}`}>
-                      {doc.ocr_status}
-                    </span>
+                  <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0">
+                      <span
+                        className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${statusStyle[doc.ocr_status] || statusStyle.pending}`}
+                        title={doc.ocr_error || statusLabel[doc.ocr_status] || doc.ocr_status}
+                      >
+                        {(doc.ocr_status === 'processing' || doc.ocr_status === 'pending') && (
+                          <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse mr-1.5" />
+                        )}
+                        {statusLabel[doc.ocr_status] || doc.ocr_status}
+                      </span>
+                      {doc.ocr_status === 'failed' && (
+                        <button
+                          type="button"
+                          onClick={() => handleRetry(doc)}
+                          disabled={busyId === doc.id}
+                          className="inline-flex items-center gap-1 text-xs font-semibold text-red-600 dark:text-red-400 hover:underline disabled:opacity-50"
+                          title={doc.ocr_error || 'Retry OCR'}
+                        >
+                          <ArrowPathIcon className={`w-3.5 h-3.5 ${busyId === doc.id ? 'animate-spin' : ''}`} />
+                          Retry
+                        </button>
+                      )}
+                    </div>
                     <div className="flex items-center space-x-1">
                       <button onClick={() => setOrganizeDoc(doc)} className={iconBtn} title="Move to folder / tags">
                         <FolderIcon className="w-4 h-4" />

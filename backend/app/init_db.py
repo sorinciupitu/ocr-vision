@@ -15,6 +15,14 @@ MIGRATIONS = [
         ADD COLUMN IF NOT EXISTS folder_id UUID
         REFERENCES folders(id) ON DELETE SET NULL
     """,
+    """
+    ALTER TABLE documents
+        ADD COLUMN IF NOT EXISTS ocr_attempts INTEGER DEFAULT 0
+    """,
+    """
+    ALTER TABLE documents
+        ADD COLUMN IF NOT EXISTS ocr_error VARCHAR(1000)
+    """,
 ]
 
 def init_db():

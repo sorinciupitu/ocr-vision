@@ -13,8 +13,7 @@ from app.database import get_db
 from app.models import User, Document, DocumentPage, SyncFolder
 from app.dependencies import get_current_user
 from app.config import get_settings
-from app.ocr_service import process_file, create_thumbnail
-from app.auto_tagging import apply_rules_to_document
+from app.ocr_runner import run_ocr_with_retries
 from app.schemas import DocumentResponse
 
 router = APIRouter(prefix="/sync", tags=["sync"])
@@ -47,7 +46,7 @@ class SyncResult(BaseModel):
 
 
 async def ingest_file(file_path: str, owner_id: UUID, db: Session):
-    """Background: ingest a single file into the archive."""
+    """Background: ingest a single file into the archive (OCR with retries)."""
     try:
         filename = os.path.basename(file_path)
         ext = os.path.splitext(filename)[1].lower().replace('.', '')
@@ -60,41 +59,16 @@ async def ingest_file(file_path: str, owner_id: UUID, db: Session):
             file_type=ext,
             file_size=file_size,
             owner_id=owner_id,
-            ocr_status="processing"
+            ocr_status="pending"
         )
         db.add(doc)
         db.commit()
         db.refresh(doc)
-
-        thumb_path = os.path.join(settings.upload_folder, "thumbnails", f"{doc.id}.png")
-        try:
-            os.makedirs(os.path.dirname(thumb_path), exist_ok=True)
-            if create_thumbnail(file_path, thumb_path):
-                doc.thumbnail_path = thumb_path
-                db.commit()
-        except Exception as e:
-            print(f"Error creating thumbnail for {file_path}: {e}")
-
-        full_text, page_count, page_texts = await process_file(file_path)
-
-        doc.ocr_text = full_text
-        doc.page_count = page_count
-        doc.ocr_status = "completed"
-        doc.search_vector = func.to_tsvector('english', full_text)
-
-        for i, text_content in enumerate(page_texts):
-            page = DocumentPage(
-                document_id=doc.id,
-                page_number=i + 1,
-                ocr_text=text_content
-            )
-            db.add(page)
-
-        db.commit()
-        # Auto-tagging: rules run on every freshly completed document.
-        apply_rules_to_document(db, doc)
     except Exception as e:
         print(f"Error ingesting {file_path}: {e}")
+        return
+
+    await run_ocr_with_retries(doc.id, db)
 
 
 @router.post("/folders", response_model=SyncFolderResponse)

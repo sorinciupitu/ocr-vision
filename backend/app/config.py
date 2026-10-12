@@ -14,6 +14,10 @@ class Settings(BaseSettings):
     max_file_size_mb: int = 50
     supported_extensions: str = ".pdf,.png,.jpg,.jpeg,.tiff,.bmp,.docx"
     redis_url: str = "redis://redis:6379/0"
+    # OCR retry policy: attempts per document and the exponential backoff
+    # base delay in seconds (delay = base * 2**(attempt-1)).
+    ocr_max_retries: int = 3
+    ocr_retry_base_delay: float = 2.0
 
     class Config:
         env_file = ".env"

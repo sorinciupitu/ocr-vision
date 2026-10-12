@@ -45,6 +45,8 @@ class Document(Base):
     page_count = Column(Integer, default=1)
     ocr_text = Column(Text, default="")
     ocr_status = Column(String(20), default="pending")  # pending, processing, completed, failed
+    ocr_attempts = Column(Integer, default=0)
+    ocr_error = Column(String(1000), nullable=True)  # last failure, shown in the UI
     thumbnail_path = Column(String(1000), nullable=True)
     folder_id = Column(UUID(as_uuid=True), ForeignKey("folders.id", ondelete="SET NULL"), nullable=True)
     owner_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)

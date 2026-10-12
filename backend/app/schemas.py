@@ -84,6 +84,8 @@ class DocumentResponse(BaseModel):
     file_size: int
     page_count: int
     ocr_status: str
+    ocr_attempts: int = 0
+    ocr_error: Optional[str] = None
     has_thumbnail: bool = False
     folder: Optional[FolderBrief] = None
     tags: List[TagBrief] = []
