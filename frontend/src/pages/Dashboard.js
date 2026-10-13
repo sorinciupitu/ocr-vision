@@ -526,7 +526,7 @@ export default function Dashboard() {
 
       {/* Selection action bar */}
       {selectedIds.size > 0 && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-1.5 sm:gap-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl shadow-lg px-4 py-2.5">
+        <div className="fixed bottom-28 md:bottom-6 left-1/2 -translate-x-1/2 z-40 max-w-[calc(100vw-2rem)] flex items-center gap-1.5 sm:gap-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl shadow-lg px-3 sm:px-4 py-2.5 overflow-x-auto">
           <span className="text-sm font-semibold text-gray-800 dark:text-gray-100 mr-1">
             {selectedIds.size} selected
           </span>

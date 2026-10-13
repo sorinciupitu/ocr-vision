@@ -1,17 +1,26 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import ThemeToggle from '../components/ThemeToggle';
+import api from '../services/api';
 
 export default function Login() {
   const [isLogin, setIsLogin] = useState(true);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [email, setEmail] = useState('');
+  const [registrationOpen, setRegistrationOpen] = useState(true);
 
   const { login, register } = useAuth();
   const navigate = useNavigate();
+
+  // Public endpoint: hide the sign-up option when admins closed registration.
+  useEffect(() => {
+    api.get('/auth/registration-status')
+      .then((r) => setRegistrationOpen(r.data.open))
+      .catch(() => {});
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -92,15 +101,17 @@ export default function Login() {
             {isLogin ? 'Sign in' : 'Sign up'}
           </button>
 
-          <div className="text-center">
-            <button
-              type="button"
-              className="font-medium text-primary-600 dark:text-primary-400 hover:text-primary-500 text-sm"
-              onClick={() => setIsLogin(!isLogin)}
-            >
-              {isLogin ? 'Need an account? Sign up' : 'Already have an account? Sign in'}
-            </button>
-          </div>
+          {registrationOpen && (
+            <div className="text-center">
+              <button
+                type="button"
+                className="font-medium text-primary-600 dark:text-primary-400 hover:text-primary-500 text-sm"
+                onClick={() => setIsLogin(!isLogin)}
+              >
+                {isLogin ? 'Need an account? Sign up' : 'Already have an account? Sign in'}
+              </button>
+            </div>
+          )}
         </form>
       </div>
     </div>

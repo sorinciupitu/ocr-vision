@@ -16,6 +16,7 @@ class User(Base):
     email = Column(String(255), unique=True, nullable=False)
     hashed_password = Column(String(255), nullable=False)
     is_active = Column(Boolean, default=True)
+    is_admin = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
     documents = relationship("Document", back_populates="owner")
@@ -137,6 +138,15 @@ class TagRule(Base):
 
     owner = relationship("User", back_populates="tag_rules")
     tag = relationship("Tag", lazy="selectin")
+
+
+class AppSetting(Base):
+    """Key/value application settings, e.g. registration_open."""
+    __tablename__ = "app_settings"
+
+    key = Column(String(100), primary_key=True)
+    value = Column(String(500), nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
 class SyncFolder(Base):

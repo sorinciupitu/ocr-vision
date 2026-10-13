@@ -23,6 +23,17 @@ MIGRATIONS = [
     ALTER TABLE documents
         ADD COLUMN IF NOT EXISTS ocr_error VARCHAR(1000)
     """,
+    """
+    ALTER TABLE users
+        ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT FALSE
+    """,
+    # Bootstrap: if nobody is an admin yet, the earliest account becomes one,
+    # so existing installs keep a reachable admin after the upgrade.
+    """
+    UPDATE users SET is_admin = TRUE
+    WHERE NOT EXISTS (SELECT 1 FROM users WHERE is_admin)
+      AND created_at = (SELECT MIN(created_at) FROM users)
+    """,
 ]
 
 def init_db():

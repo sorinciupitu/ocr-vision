@@ -10,6 +10,7 @@ import DocumentView from './pages/DocumentView';
 import PrintView from './pages/PrintView';
 import SyncFolders from './pages/SyncFolders';
 import Analytics from './pages/Analytics';
+import Settings from './pages/Settings';
 
 function App() {
   return (
@@ -25,6 +26,7 @@ function App() {
             <Route path="/document/:id" element={<DocumentView />} />
             <Route path="/sync" element={<SyncFolders />} />
             <Route path="/analytics" element={<Analytics />} />
+            <Route path="/settings" element={<Settings />} />
           </Route>
         </Routes>
       </BrowserRouter>

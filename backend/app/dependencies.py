@@ -32,6 +32,13 @@ def _resolve_user(token: Optional[str], db: Session) -> User:
     user = db.query(User).filter(User.username == username).first()
     if user is None:
         raise credentials_exception
+    if not user.is_active:
+        # A disabled account loses access immediately, even with a valid token.
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Account is disabled",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     return user
 
 

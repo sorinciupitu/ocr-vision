@@ -19,9 +19,29 @@ class UserResponse(BaseModel):
     username: str
     email: EmailStr
     is_active: bool
+    is_admin: bool = False
 
     class Config:
         from_attributes = True
+
+
+class UserAdminResponse(UserResponse):
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class UserAdminUpdate(BaseModel):
+    username: Optional[str] = None
+    email: Optional[EmailStr] = None
+    password: Optional[str] = None
+    is_active: Optional[bool] = None
+    is_admin: Optional[bool] = None
+
+
+class RegistrationStatus(BaseModel):
+    open: bool
 
 
 class TagBrief(BaseModel):
