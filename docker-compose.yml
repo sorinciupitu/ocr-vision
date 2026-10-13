@@ -44,6 +44,9 @@ services:
     volumes:
       - ./backend:/app
       - ./sample_documents:/app/local_sync
+      # Host directory users add as sync folders in the UI; the container must
+      # see the same absolute path because file_path is stored verbatim.
+      - ${SCAN_DIR:-/mnt/scan}:${SCAN_DIR:-/mnt/scan}:ro
     depends_on:
       - db
       - vllm
