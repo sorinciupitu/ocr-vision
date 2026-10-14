@@ -1,10 +1,12 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import {
   UsersIcon, ShieldCheckIcon, CheckIcon, XMarkIcon,
-  EnvelopeIcon, KeyIcon, LockClosedIcon, LockOpenIcon, UserCircleIcon
+  EnvelopeIcon, KeyIcon, LockClosedIcon, LockOpenIcon, UserCircleIcon,
+  ArrowDownTrayIcon, ArrowUpTrayIcon, ArchiveBoxIcon
 } from '@heroicons/react/24/outline';
-import api from '../services/api';
+import api, { mediaUrl } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
 
 const cardClass = 'bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 shadow-sm';
@@ -127,12 +129,18 @@ function EditUserDialog({ user, onClose, onSaved, currentUserId }) {
 }
 
 export default function Settings() {
-  const { user, refreshUser } = useAuth();
+  const { user, refreshUser, logout } = useAuth();
+  const navigate = useNavigate();
   const [users, setUsers] = useState([]);
   const [registrationOpen, setRegistrationOpen] = useState(true);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(null);
   const [toggling, setToggling] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportStatus, setExportStatus] = useState('');
+  const [importing, setImporting] = useState(false);
+  const [backupInfo, setBackupInfo] = useState(null);
+  const importInputRef = useRef(null);
 
   const isAdmin = !!(user && user.is_admin);
 
@@ -142,12 +150,14 @@ export default function Settings() {
       return;
     }
     try {
-      const [usersRes, settingsRes] = await Promise.all([
+      const [usersRes, settingsRes, backupRes] = await Promise.all([
         api.get('/admin/users'),
         api.get('/admin/settings'),
+        api.get('/admin/backup/info'),
       ]);
       setUsers(usersRes.data);
       setRegistrationOpen(settingsRes.data.open);
+      setBackupInfo(backupRes.data);
     } catch (err) {
       toast.error('Failed to load settings');
     }
@@ -166,6 +176,67 @@ export default function Settings() {
       toast.error(err.response?.data?.detail || 'Failed to update setting');
     }
     setToggling(false);
+  };
+
+  const exportArchive = async (kind) => {
+    setExporting(true);
+    setExportStatus('Preparing archive…');
+    try {
+      const res = await api.post('/admin/backup/export', { kind });
+      const { job_id: jobId, parts } = res.data;
+      // Parts are fetched one by one as plain links (?token= auth) so the
+      // browser streams them straight to disk instead of buffering in RAM.
+      for (let i = 0; i < parts.length; i += 1) {
+        setExportStatus(`Downloading part ${i + 1} of ${parts.length}…`);
+        const link = document.createElement('a');
+        link.href = mediaUrl(`/admin/backup/export/${jobId}/${encodeURIComponent(parts[i].name)}`);
+        link.download = parts[i].name;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        if (i < parts.length - 1) {
+          // Small gap so the browser queues the downloads instead of dropping some.
+          await new Promise((resolve) => setTimeout(resolve, 700));
+        }
+      }
+      toast.success(
+        parts.length > 1
+          ? `Backup exported as ${parts.length} parts — select all of them when importing`
+          : 'Backup downloaded'
+      );
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Export failed', { duration: 8000 });
+    }
+    setExporting(false);
+    setExportStatus('');
+  };
+
+  const importArchive = async (fileList) => {
+    const parts = Array.from(fileList).sort((a, b) => a.name.localeCompare(b.name));
+    const confirmed = window.confirm(
+      `Importing ${parts.length} archive part(s) REPLACES ALL data on this server `
+      + '(users, documents, folders, tags, settings) with the archive contents. '
+      + 'For a database-only archive the original files must already be in the files folder. '
+      + 'This cannot be undone. Continue?'
+    );
+    if (!confirmed) return;
+    setImporting(true);
+    try {
+      const form = new FormData();
+      parts.forEach((f) => form.append('files', f));
+      const res = await api.post('/admin/backup/import', form);
+      const counts = res.data?.imported || {};
+      toast.success(
+        `Archive imported: ${counts.documents ?? 0} documents, ${counts.users ?? 0} users`
+      );
+      // The archive replaced all accounts, so the current session may be gone.
+      logout();
+      navigate('/login');
+    } catch (err) {
+      const detail = err.response?.data?.detail;
+      toast.error(typeof detail === 'string' ? detail : 'Import failed', { duration: 12000 });
+    }
+    setImporting(false);
   };
 
   if (!isAdmin) {
@@ -200,6 +271,74 @@ export default function Settings() {
             label="User registration"
           />
         </div>
+      </div>
+
+      {/* Backup & restore */}
+      <div className={`${cardClass} p-6 md:p-8`}>
+        <h2 className="text-lg font-bold tracking-tight text-gray-900 dark:text-gray-100 flex items-center gap-2 mb-1">
+          <ArchiveBoxIcon className="w-5 h-5 text-primary-500" />
+          Backup &amp; restore
+        </h2>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mb-5">
+          Export everything (users, documents, OCR text, folders, tags, files) as a ZIP split
+          into parts{backupInfo ? ` of up to ${backupInfo.part_size_mb} MB` : ''}, export only
+          the database, or restore an exported archive on this or another server.
+        </p>
+        <div className="flex flex-wrap gap-3">
+          <button
+            onClick={() => exportArchive('full')}
+            disabled={exporting || importing}
+            className="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-white bg-primary-500 hover:bg-primary-600 rounded-xl disabled:opacity-60"
+          >
+            <ArrowDownTrayIcon className="w-4 h-4" />
+            {exporting ? 'Preparing…' : 'Export (with files)'}
+          </button>
+          <button
+            onClick={() => exportArchive('database')}
+            disabled={exporting || importing}
+            className="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-xl disabled:opacity-60"
+          >
+            <ArrowDownTrayIcon className="w-4 h-4" />
+            {exporting ? 'Preparing…' : 'Export (DB only)'}
+          </button>
+          <button
+            onClick={() => importInputRef.current?.click()}
+            disabled={exporting || importing}
+            className="inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-xl disabled:opacity-60"
+          >
+            <ArrowUpTrayIcon className="w-4 h-4" />
+            {importing ? 'Importing…' : 'Import archive'}
+          </button>
+          <input
+            ref={importInputRef}
+            type="file"
+            accept=".zip,application/zip"
+            multiple
+            className="hidden"
+            onChange={(e) => {
+              const selected = Array.from(e.target.files || []);
+              e.target.value = '';
+              if (selected.length) importArchive(selected);
+            }}
+          />
+        </div>
+        {exporting && exportStatus && (
+          <p className="text-xs text-amber-600 dark:text-amber-400 mt-3">{exportStatus}</p>
+        )}
+        {backupInfo && (
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-4 leading-5">
+            Import needs every part of the archive — select all exported <code>.zip</code>{' '}
+            parts together. For a database-only archive, copy the original files into{' '}
+            <code className="break-all">{backupInfo.upload_folder}</code>{' '}
+            <em>before</em> importing (flat, or one subfolder per document id); if any file
+            is missing the import is refused and nothing is changed.
+          </p>
+        )}
+        {importing && (
+          <p className="text-xs text-amber-600 dark:text-amber-400 mt-3">
+            Restoring the archive — keep this tab open until it finishes.
+          </p>
+        )}
       </div>
 
       {/* Users */}

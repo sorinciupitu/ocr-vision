@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers import admin, auth, documents, sync_folders, organize, tag_rules, analytics
+from app.routers import admin, auth, backup, documents, sync_folders, organize, tag_rules, analytics
 from app.database import engine, Base, SessionLocal
 from app.models import Document
 from app.ocr_runner import run_ocr_with_retries
@@ -65,6 +65,7 @@ app.add_middleware(
 
 app.include_router(auth.router, prefix="/api")
 app.include_router(admin.router, prefix="/api")
+app.include_router(backup.router, prefix="/api")
 app.include_router(documents.router, prefix="/api")
 app.include_router(sync_folders.router, prefix="/api")
 app.include_router(organize.router, prefix="/api")

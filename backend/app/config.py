@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     # base delay in seconds (delay = base * 2**(attempt-1)).
     ocr_max_retries: int = 3
     ocr_retry_base_delay: float = 2.0
+    # Backup archives are split into parts of at most this size (a single
+    # document file is never cut, so a part can exceed it by up to one file).
+    backup_part_size_mb: int = 1024
 
     class Config:
         env_file = ".env"
