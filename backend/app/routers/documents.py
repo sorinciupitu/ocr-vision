@@ -1,6 +1,7 @@
 import os
 import re
 import shutil
+import logging
 from typing import List, Optional
 from uuid import UUID
 
@@ -21,6 +22,7 @@ from app.ocr_runner import run_ocr_with_retries
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 settings = get_settings()
+logger = logging.getLogger(__name__)
 
 
 def _get_owned_document(document_id: UUID, db: Session, user: User) -> Document:
@@ -41,39 +43,44 @@ async def upload_document(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    safe_name = os.path.basename((file.filename or "").strip())
+    file_ext = os.path.splitext(safe_name)[1].lower().replace('.', '')
+    allowed = {ext.lstrip('.') for ext in settings.supported_extensions.split(',')}
+    if not safe_name or not file_ext or file_ext not in allowed:
+        raise HTTPException(status_code=400, detail=f"Unsupported file type. Allowed: {', '.join(sorted(allowed))}")
     if folder_id is not None:
-        owned = db.query(Folder).filter(
-            Folder.id == folder_id, Folder.owner_id == current_user.id
-        ).first()
+        owned = db.query(Folder).filter(Folder.id == folder_id, Folder.owner_id == current_user.id).first()
         if not owned:
             raise HTTPException(status_code=404, detail="Folder not found")
 
     os.makedirs(settings.upload_folder, exist_ok=True)
-    file_path = os.path.join(settings.upload_folder, file.filename)
-    
-    with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-        
-    file_size = os.path.getsize(file_path)
-    file_ext = os.path.splitext(file.filename)[1].lower().replace('.', '')
-
-    new_doc = Document(
-        title=file.filename,
-        original_filename=file.filename,
-        file_path=file_path,
-        file_type=file_ext,
-        file_size=file_size,
-        owner_id=current_user.id,
-        folder_id=folder_id,
-        ocr_status="pending"
-    )
-    db.add(new_doc)
-    db.commit()
-    db.refresh(new_doc)
-
-    background_tasks.add_task(run_ocr_with_retries, new_doc.id, db)
-
-    return new_doc
+    file_path = os.path.join(settings.upload_folder, safe_name)
+    try:
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        file_size = os.path.getsize(file_path)
+        max_bytes = settings.max_file_size_mb * 1024 * 1024
+        if file_size > max_bytes:
+            os.remove(file_path)
+            raise HTTPException(status_code=413, detail=f"File is larger than the {settings.max_file_size_mb} MB limit")
+        new_doc = Document(
+            title=safe_name, original_filename=safe_name, file_path=file_path,
+            file_type=file_ext, file_size=file_size, owner_id=current_user.id,
+            folder_id=folder_id, ocr_status="pending"
+        )
+        db.add(new_doc)
+        db.commit()
+        db.refresh(new_doc)
+        background_tasks.add_task(run_ocr_with_retries, new_doc.id, db)
+        return new_doc
+    except HTTPException:
+        raise
+    except Exception as exc:
+        db.rollback()
+        if os.path.exists(file_path):
+            os.remove(file_path)
+        logger.exception("Document upload failed for %r (user=%s)", safe_name, current_user.id)
+        raise HTTPException(status_code=500, detail=f"Upload failed: {exc}") from exc
 
 
 @router.post("/duplicates/check", response_model=DuplicateCheckResponse)

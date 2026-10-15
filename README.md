@@ -6,6 +6,7 @@ A modern, Dockerized web application for archiving physical documents and search
 
 - 🔐 **Authentication**: User login and registration system.
 - 📤 **Document Scanning/Upload**: Drag-and-drop interface for uploading PDF, DOCX, and image files.
+- 🤖 **Document AI chat**: Ask questions across your OCR documents using Ollama, vLLM, or any OpenAI-compatible endpoint.
 - 📁 **Folders & Tags**: Create your own folders and tags, file processed documents into them, and filter the dashboard by folder or tag. New uploads land straight in the folder you are viewing.
 - 📁 **Background Sync Folders**: Mount a local folder and scan existing files directly into the database.
 - 🧠 **Advanced OCR**: Built-in support for `lightonai/LightOnOCR-3-4B` served via vLLM for fast, GPU-accelerated text extraction.
@@ -52,6 +53,8 @@ A modern, Dockerized web application for archiving physical documents and search
    Create a new account from the main login screen.
 2. **Dashboard**:
    Drag and drop files to manually upload and begin the OCR process.
+
+   Administrators can configure the AI provider and inspect the server runtime console from **Settings**. The floating brain button opens **AI Chat**. For Ollama running on the Linux host while the app runs in Docker, the default endpoint is `http://host.docker.internal:11434/v1/chat/completions`; `docker-compose.yml` maps that hostname to the host gateway.
 3. **Sync Folders**:
    Add a local folder tracking path (`/app/local_sync` is mapped to `./sample_documents` by default in docker-compose). Click **Scan** to ingest everything the folder holds.
 4. **Organize**:

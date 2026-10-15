@@ -34,7 +34,6 @@ async function processEntries(entries) {
     if (entry.folderId) formData.append('folder_id', entry.folderId);
     try {
       await api.post('/documents/upload', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
         onUploadProgress: (e) => {
           if (e.total) patch(entry.id, { progress: Math.round((e.loaded * 100) / e.total) });
         },
@@ -47,7 +46,9 @@ async function processEntries(entries) {
         status: 'error',
         error: err.response?.data?.detail || err.message || 'Upload failed',
       });
-      toast.error(`Failed to upload ${entry.name}`);
+      const detail = err.response?.data?.detail;
+      const message = typeof detail === 'string' ? detail : (err.message || 'Upload failed');
+      toast.error(`Failed to upload ${entry.name}: ${message}`);
     }
   }
 }

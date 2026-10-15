@@ -11,6 +11,7 @@ import PrintView from './pages/PrintView';
 import SyncFolders from './pages/SyncFolders';
 import Analytics from './pages/Analytics';
 import Settings from './pages/Settings';
+import Chat from './pages/Chat';
 
 function App() {
   return (
@@ -23,6 +24,7 @@ function App() {
           <Route element={<Layout />}>
             <Route path="/" element={<Dashboard />} />
             <Route path="/search" element={<Search />} />
+            <Route path="/chat" element={<Chat />} />
             <Route path="/document/:id" element={<DocumentView />} />
             <Route path="/sync" element={<SyncFolders />} />
             <Route path="/analytics" element={<Analytics />} />

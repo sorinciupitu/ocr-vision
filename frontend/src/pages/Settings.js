@@ -4,7 +4,8 @@ import toast from 'react-hot-toast';
 import {
   UsersIcon, ShieldCheckIcon, CheckIcon, XMarkIcon,
   EnvelopeIcon, KeyIcon, LockClosedIcon, LockOpenIcon, UserCircleIcon,
-  ArrowDownTrayIcon, ArrowUpTrayIcon, ArchiveBoxIcon
+  ArrowDownTrayIcon, ArrowUpTrayIcon, ArchiveBoxIcon,
+  CpuChipIcon, CommandLineIcon, ArrowPathIcon
 } from '@heroicons/react/24/outline';
 import api, { mediaUrl } from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
@@ -140,6 +141,9 @@ export default function Settings() {
   const [exportStatus, setExportStatus] = useState('');
   const [importing, setImporting] = useState(false);
   const [backupInfo, setBackupInfo] = useState(null);
+  const [llm, setLlm] = useState({ provider: 'ollama', base_url: '', model: '', api_key: '' });
+  const [logs, setLogs] = useState([]);
+  const [savingLlm, setSavingLlm] = useState(false);
   const importInputRef = useRef(null);
 
   const isAdmin = !!(user && user.is_admin);
@@ -150,18 +154,46 @@ export default function Settings() {
       return;
     }
     try {
-      const [usersRes, settingsRes, backupRes] = await Promise.all([
+      const [usersRes, settingsRes, backupRes, llmRes, logsRes] = await Promise.all([
         api.get('/admin/users'),
         api.get('/admin/settings'),
         api.get('/admin/backup/info'),
+        api.get('/admin/llm'),
+        api.get('/admin/logs?limit=200'),
       ]);
       setUsers(usersRes.data);
       setRegistrationOpen(settingsRes.data.open);
       setBackupInfo(backupRes.data);
+      setLlm({ ...llmRes.data, api_key: '' });
+      setLogs(logsRes.data.logs || []);
     } catch (err) {
       toast.error('Failed to load settings');
     }
     setLoading(false);
+  };
+
+  const saveLlm = async (event) => {
+    event.preventDefault();
+    setSavingLlm(true);
+    try {
+      const payload = { provider: llm.provider, base_url: llm.base_url, model: llm.model };
+      if (llm.api_key) payload.api_key = llm.api_key;
+      const res = await api.put('/admin/llm', payload);
+      setLlm({ ...res.data, api_key: '' });
+      toast.success('LLM settings saved');
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Failed to save LLM settings');
+    } finally {
+      setSavingLlm(false);
+    }
+  };
+
+  const refreshLogs = async () => {
+    try { setLogs((await api.get('/admin/logs?limit=200')).data.logs || []); } catch (err) { toast.error('Failed to load logs'); }
+  };
+
+  const clearLogs = async () => {
+    try { await api.delete('/admin/logs'); setLogs([]); } catch (err) { toast.error('Failed to clear logs'); }
   };
 
   useEffect(() => { fetchAll(); }, [isAdmin]);
@@ -250,6 +282,26 @@ export default function Settings() {
 
   return (
     <div className="space-y-8">
+      {/* LLM / document chat */}
+      <div className={`${cardClass} p-6 md:p-8`}>
+        <h2 className="text-lg font-bold tracking-tight text-gray-900 dark:text-gray-100 flex items-center gap-2 mb-1"><CpuChipIcon className="w-5 h-5 text-primary-500" /> AI chat &amp; LLM</h2>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mb-5">Configurează Ollama sau orice endpoint OpenAI-compatible. Chat-ul folosește textul OCR al documentelor tale.</p>
+        <form onSubmit={saveLlm} className="grid md:grid-cols-2 gap-4">
+          <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Provider</label><select className={inputClass} value={llm.provider} onChange={(e) => { const provider = e.target.value; setLlm({ ...llm, provider, model: llm.model || (provider === 'vllm' ? 'lightonai/LightOnOCR-3-4B' : provider === 'ollama' ? 'llama3.2' : '') }); }}><option value="ollama">Ollama</option><option value="openai">OpenAI-compatible</option><option value="vllm">vLLM (OCR model)</option></select></div>
+          <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Model name</label><input className={inputClass} value={llm.model || ''} onChange={(e) => setLlm({ ...llm, model: e.target.value })} placeholder="llama3.2" required /></div>
+          <div className="md:col-span-2"><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Endpoint URL</label><input className={inputClass} value={llm.base_url || ''} onChange={(e) => setLlm({ ...llm, base_url: e.target.value })} placeholder="http://host.docker.internal:11434/v1/chat/completions" /><p className="text-xs text-gray-400 mt-1">Pentru Ollama în Docker pe Linux, folosește adresa hostului accesibilă din container.</p></div>
+          <div><label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">API key {llm.api_key_set && <span className="text-emerald-600">(set)</span>}</label><input type="password" className={inputClass} value={llm.api_key || ''} onChange={(e) => setLlm({ ...llm, api_key: e.target.value })} placeholder={llm.api_key_set ? 'Leave empty to keep current key' : 'Optional'} autoComplete="new-password" /></div>
+          <div className="flex items-end"><button type="submit" disabled={savingLlm} className="px-4 py-2.5 rounded-xl bg-primary-500 text-white text-sm font-medium disabled:opacity-60">{savingLlm ? 'Saving…' : 'Save LLM settings'}</button></div>
+        </form>
+      </div>
+
+      {/* Runtime log console */}
+      <div className={`${cardClass} p-6 md:p-8`}>
+        <div className="flex items-center justify-between gap-3 mb-1"><h2 className="text-lg font-bold tracking-tight text-gray-900 dark:text-gray-100 flex items-center gap-2"><CommandLineIcon className="w-5 h-5 text-primary-500" /> Runtime console</h2><div className="flex gap-2"><button onClick={refreshLogs} className="p-2 rounded-lg text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800" title="Refresh logs"><ArrowPathIcon className="w-4 h-4" /></button><button onClick={clearLogs} className="px-3 py-1.5 text-xs rounded-lg text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-800">Clear</button></div></div>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">Ultimele erori și mesaje ale serverului, inclusiv traceback-ul upload-urilor eșuate.</p>
+        <pre className="max-h-80 overflow-auto rounded-xl bg-gray-950 text-gray-200 p-4 text-xs leading-5 whitespace-pre-wrap">{logs.length ? logs.map((log) => `[${log.timestamp}] ${log.level} ${log.logger}: ${log.message}`).join('\n') : 'No runtime logs yet.'}</pre>
+      </div>
+
       {/* Registration toggle */}
       <div className={`${cardClass} p-6 md:p-8`}>
         <div className="flex items-start justify-between gap-4">

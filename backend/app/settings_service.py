@@ -4,6 +4,10 @@ from sqlalchemy.orm import Session
 from app.models import AppSetting, User
 
 REGISTRATION_OPEN = "registration_open"
+LLM_PROVIDER = "llm_provider"
+LLM_BASE_URL = "llm_base_url"
+LLM_API_KEY = "llm_api_key"
+LLM_MODEL = "llm_model"
 
 
 def get_setting(db: Session, key: str, default: str = None):

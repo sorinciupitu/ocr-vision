@@ -1,15 +1,19 @@
 """Admin-only endpoints: application settings and user management."""
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.auth import get_password_hash
 from app.database import get_db
 from app.dependencies import get_current_user
 from app.models import User
-from app.schemas import RegistrationStatus, UserAdminResponse, UserAdminUpdate
-from app.settings_service import REGISTRATION_OPEN, get_setting, registration_open, set_setting
+from app.schemas import RegistrationStatus, UserAdminResponse, UserAdminUpdate, LLMSettings, LLMSettingsUpdate
+from app.settings_service import (
+    REGISTRATION_OPEN, LLM_PROVIDER, LLM_BASE_URL, LLM_API_KEY, LLM_MODEL,
+    get_setting, registration_open, set_setting,
+)
+from app.log_buffer import log_buffer
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -33,6 +37,47 @@ def update_registration(
 ):
     set_setting(db, REGISTRATION_OPEN, "true" if status.open else "false")
     return {"open": status.open}
+
+
+@router.get("/llm", response_model=LLMSettings)
+def read_llm_settings(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    return {
+        "provider": get_setting(db, LLM_PROVIDER, "ollama"),
+        "base_url": get_setting(db, LLM_BASE_URL, ""),
+        "model": get_setting(db, LLM_MODEL, ""),
+        "api_key_set": bool(get_setting(db, LLM_API_KEY, "")),
+    }
+
+
+@router.put("/llm", response_model=LLMSettings)
+def update_llm_settings(
+    update: LLMSettingsUpdate,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    base_url = update.base_url.strip()
+    if base_url and not base_url.startswith(("http://", "https://")):
+        raise HTTPException(status_code=400, detail="LLM endpoint must start with http:// or https://")
+    set_setting(db, LLM_PROVIDER, update.provider.strip())
+    set_setting(db, LLM_BASE_URL, base_url)
+    set_setting(db, LLM_MODEL, update.model.strip())
+    if update.api_key is not None:
+        set_setting(db, LLM_API_KEY, update.api_key.strip())
+    return read_llm_settings(db, admin)
+
+
+@router.get("/logs")
+def read_logs(
+    limit: int = Query(default=200, ge=1, le=500),
+    admin: User = Depends(require_admin),
+):
+    return {"logs": log_buffer.snapshot(limit)}
+
+
+@router.delete("/logs")
+def clear_logs(admin: User = Depends(require_admin)):
+    log_buffer.clear()
+    return {"ok": True}
 
 
 @router.get("/users", response_model=list[UserAdminResponse])

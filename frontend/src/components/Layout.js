@@ -5,7 +5,7 @@ import { Menu, Transition } from '@headlessui/react';
 import {
   MagnifyingGlassIcon, DocumentPlusIcon, FolderArrowDownIcon,
   ArrowRightOnRectangleIcon, PlusIcon, ArrowUpTrayIcon, ChartBarIcon,
-  Cog6ToothIcon, ChevronDoubleLeftIcon, ChevronDoubleRightIcon,
+  Cog6ToothIcon, CpuChipIcon, ChevronDoubleLeftIcon, ChevronDoubleRightIcon,
   FolderIcon, HomeIcon, PencilIcon
 } from '@heroicons/react/24/outline';
 import { useAuth } from '../contexts/AuthContext';
@@ -24,6 +24,7 @@ import {
 
 const navigation = [
   { name: 'Dashboard', href: '/', icon: DocumentPlusIcon },
+  { name: 'AI Chat', href: '/chat', icon: CpuChipIcon },
   { name: 'Search', href: '/search', icon: MagnifyingGlassIcon },
   { name: 'Analytics', href: '/analytics', icon: ChartBarIcon },
   { name: 'Sync Folders', href: '/sync', icon: FolderArrowDownIcon },
@@ -42,7 +43,7 @@ const mobileNav = [
 const FOLDER_COLORS = ['bg-primary-500', 'bg-emerald-500', 'bg-amber-500', 'bg-rose-500', 'bg-sky-500', 'bg-violet-500'];
 
 const PAGE_TITLES = {
-  '/': 'Dashboard', '/search': 'Search', '/analytics': 'Analytics',
+  '/': 'Dashboard', '/chat': 'AI Chat', '/search': 'Search', '/analytics': 'Analytics',
   '/sync': 'Sync Folders', '/settings': 'Settings',
 };
 
@@ -552,6 +553,14 @@ function Layout() {
 
       {/* Floating action buttons (desktop; phones use header + bottom bar) */}
       <div className="fixed bottom-6 right-6 hidden md:flex flex-col items-end space-y-3 z-40">
+        <button
+          type="button"
+          onClick={() => navigate('/chat')}
+          className="w-12 h-12 rounded-full bg-primary-500 text-white shadow-lg hover:bg-primary-600 flex items-center justify-center transition-colors"
+          title="Chat with your documents"
+        >
+          <CpuChipIcon className="w-6 h-6" />
+        </button>
         <button
           type="button"
           onClick={() => setSearchOpen(true)}

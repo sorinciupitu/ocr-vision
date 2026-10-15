@@ -3,13 +3,15 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers import admin, auth, backup, documents, sync_folders, organize, tag_rules, analytics
+from app.routers import admin, auth, backup, documents, sync_folders, organize, tag_rules, analytics, chat
 from app.database import engine, Base, SessionLocal
 from app.models import Document
 from app.ocr_runner import run_ocr_with_retries
 
 from app.init_db import init_db
+from app.log_buffer import install_log_buffer
 
+install_log_buffer()
 init_db()
 
 
@@ -71,6 +73,7 @@ app.include_router(sync_folders.router, prefix="/api")
 app.include_router(organize.router, prefix="/api")
 app.include_router(tag_rules.router, prefix="/api")
 app.include_router(analytics.router, prefix="/api")
+app.include_router(chat.router, prefix="/api")
 
 @app.get("/health")
 def health_check():

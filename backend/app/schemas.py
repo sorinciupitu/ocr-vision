@@ -44,6 +44,30 @@ class RegistrationStatus(BaseModel):
     open: bool
 
 
+class LLMSettings(BaseModel):
+    provider: str = "ollama"
+    base_url: str = ""
+    model: str = ""
+    api_key_set: bool = False
+
+
+class LLMSettingsUpdate(BaseModel):
+    provider: str = Field(default="ollama", min_length=1, max_length=50)
+    base_url: str = Field(default="", max_length=500)
+    model: str = Field(default="", max_length=200)
+    api_key: Optional[str] = Field(default=None, max_length=500)
+
+
+class ChatRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=4000)
+    history: List[dict] = Field(default_factory=list, max_length=20)
+
+
+class ChatResponse(BaseModel):
+    answer: str
+    sources: List[str] = []
+
+
 class TagBrief(BaseModel):
     id: UUID4
     name: str

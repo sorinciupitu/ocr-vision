@@ -47,6 +47,8 @@ services:
       # Host directory users add as sync folders in the UI; the container must
       # see the same absolute path because file_path is stored verbatim.
       - ${SCAN_DIR:-/mnt/scan}:${SCAN_DIR:-/mnt/scan}:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       - db
       - vllm
