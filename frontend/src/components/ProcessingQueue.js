@@ -27,6 +27,7 @@ const uploadStatusLabel = { queued: 'Waiting…', uploading: 'Uploading…', don
 export default function ProcessingQueue({
   uploads,
   documents,
+  queueDocuments = [],
   busyId,
   onRetryUpload,
   onRetryAllUploads,
@@ -37,10 +38,19 @@ export default function ProcessingQueue({
 }) {
   const [open, setOpen] = useState(false);
 
+  // The dashboard document list is paginated (latest 100), while the global
+  // queue endpoint includes every pending/processing/failed document. Merge
+  // them so the summary and detailed list use the same source of truth.
+  const allDocuments = useMemo(() => {
+    const byId = new Map(documents.map((doc) => [doc.id, doc]));
+    queueDocuments.forEach((doc) => byId.set(doc.id, doc));
+    return Array.from(byId.values());
+  }, [documents, queueDocuments]);
+
   const stats = useMemo(() => {
     const s = { pending: 0, processing: 0, completed: 0, failed: 0 };
     const durations = [];
-    documents.forEach((d) => {
+    allDocuments.forEach((d) => {
       s[d.ocr_status] = (s[d.ocr_status] || 0) + 1;
       if (d.ocr_status === 'completed' && d.created_at && d.updated_at) {
         const sec = (new Date(d.updated_at) - new Date(d.created_at)) / 1000;
@@ -56,13 +66,13 @@ export default function ProcessingQueue({
       remaining,
       eta: avg != null && remaining > 0 ? formatEta(Math.round(avg * remaining)) : null,
     };
-  }, [documents]);
+  }, [allDocuments]);
 
   const activeUploads = uploads.filter((u) => u.status === 'queued' || u.status === 'uploading');
   const failedUploads = uploads.filter((u) => u.status === 'error');
   const doneUploads = uploads.filter((u) => u.status === 'done');
-  const failedDocs = documents.filter((d) => d.ocr_status === 'failed');
-  const queuedDocs = documents.filter((d) => d.ocr_status === 'pending' || d.ocr_status === 'processing');
+  const failedDocs = allDocuments.filter((d) => d.ocr_status === 'failed');
+  const queuedDocs = allDocuments.filter((d) => d.ocr_status === 'pending' || d.ocr_status === 'processing');
 
   const badgeCount = activeUploads.length + failedUploads.length + stats.remaining + stats.failed;
   const hasActivity = badgeCount > 0;

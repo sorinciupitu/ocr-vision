@@ -44,6 +44,7 @@ const statusLabel = {
 
 export default function Dashboard() {
   const [documents, setDocuments] = useState([]);
+  const [queueDocuments, setQueueDocuments] = useState([]);
   const [folders, setFolders] = useState([]);
   const [tags, setTags] = useState([]);
   const [uploadState, setUploadState] = useState(getUploadState);
@@ -76,8 +77,12 @@ export default function Dashboard() {
       const params = {};
       if (folderId) params.folder_id = folderId;
       if (tagId) params.tag_id = tagId;
-      const res = await api.get('/documents', { params });
-      setDocuments(res.data);
+      const [documentsRes, queueRes] = await Promise.all([
+        api.get('/documents', { params }),
+        api.get('/documents/queue'),
+      ]);
+      setDocuments(documentsRes.data);
+      setQueueDocuments(queueRes.data || []);
     } catch (err) {
       toast.error("Failed to load documents");
     }
@@ -636,6 +641,7 @@ export default function Dashboard() {
       <ProcessingQueue
         uploads={uploadQueue}
         documents={documents}
+        queueDocuments={queueDocuments}
         busyId={busyId}
         onRetryUpload={retryUpload}
         onRetryAllUploads={retryAllUploads}
