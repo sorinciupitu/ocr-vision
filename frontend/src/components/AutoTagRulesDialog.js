@@ -174,7 +174,7 @@ export default function AutoTagRulesDialog({ tags, onClose, onChanged }) {
                           <span className="font-mono text-gray-800 dark:text-gray-200 truncate">{r.pattern}</span>
                           <span className="text-gray-400">”</span>
                           <span className="text-gray-400">→</span>
-                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium ${tagColor(r.tag.name)}`}>
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium ${tagColor(r.tag)}`}>
                             {r.tag.name}
                           </span>
                         </div>

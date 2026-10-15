@@ -344,6 +344,17 @@ export default function Dashboard() {
     return () => window.removeEventListener('docs-changed', onDocsChanged);
   }, [fetchDocuments]);
 
+  // Tag renames/colors and rule backfills change chips and card tags
+  // without touching selection; refresh them as soon as they happen.
+  useEffect(() => {
+    const onTagsChanged = () => {
+      fetchDocuments();
+      fetchMeta();
+    };
+    window.addEventListener('tags-changed', onTagsChanged);
+    return () => window.removeEventListener('tags-changed', onTagsChanged);
+  }, [fetchDocuments]);
+
   const quickActions = [
     { label: 'Upload documents', desc: 'Add PDFs or images to the archive', icon: ArrowUpTrayIcon, onClick: () => heroInputRef.current && heroInputRef.current.click() },
     { label: 'Search archive', desc: 'Full-text search across OCR text', icon: MagnifyingGlassIcon, onClick: () => navigate('/search') },
@@ -419,7 +430,7 @@ export default function Dashboard() {
           </span>
         )}
         {(doc.tags || []).map((t) => (
-          <span key={t.id} className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium ${tagColor(t.name)}`}>
+          <span key={t.id} className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium ${tagColor(t)}`}>
             {t.name}
           </span>
         ))}
@@ -701,7 +712,7 @@ export default function Dashboard() {
                   }}
                   className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
                     active
-                      ? tagColor(t.name)
+                      ? tagColor(t)
                       : 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700'
                   }`}
                   title={active ? 'Clear tag filter' : `Filter by #${t.name}`}

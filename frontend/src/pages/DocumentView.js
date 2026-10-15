@@ -155,7 +155,7 @@ export default function DocumentView() {
                   </span>
                 )}
                 {(doc.tags || []).map((t) => (
-                  <span key={t.id} className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${tagColor(t.name)}`}>
+                  <span key={t.id} className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${tagColor(t)}`}>
                     <TagIcon className="w-3.5 h-3.5 mr-1.5" />
                     {t.name}
                   </span>

@@ -6,13 +6,15 @@ import {
   MagnifyingGlassIcon, DocumentPlusIcon, FolderArrowDownIcon,
   ArrowRightOnRectangleIcon, PlusIcon, ArrowUpTrayIcon, ChartBarIcon,
   Cog6ToothIcon, ChevronDoubleLeftIcon, ChevronDoubleRightIcon,
-  FolderIcon, HomeIcon
+  FolderIcon, HomeIcon, PencilIcon
 } from '@heroicons/react/24/outline';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
 import ThemeToggle from './ThemeToggle';
 import SearchOverlay from './SearchOverlay';
 import DuplicateDialog from './DuplicateDialog';
+import TagEditDialog from './TagEditDialog';
+import { tagDot } from './OrganizeDialog';
 import {
   enqueueUploadFiles,
   subscribeUploads,
@@ -56,10 +58,13 @@ function Layout() {
   const fileInputRef = useRef(null);
   const [uploadState, setUploadState] = useState(getUploadState);
   const [folders, setFolders] = useState([]);
+  const [tags, setTags] = useState([]);
+  const [editingTag, setEditingTag] = useState(null);
   const [newFolderName, setNewFolderName] = useState('');
   const [creatingFolder, setCreatingFolder] = useState(false);
   const query = useQuery();
   const activeFolder = query.get('folder');
+  const activeTag = query.get('tag');
   const [dropTarget, setDropTarget] = useState(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem('sidebar-collapsed') === 'true');
@@ -93,14 +98,29 @@ function Layout() {
     api.get('/folders').then((r) => setFolders(r.data)).catch(() => {});
   };
 
-  useEffect(fetchFolders, [location.pathname]);
+  const fetchTags = () => {
+    api.get('/tags').then((r) => setTags(r.data)).catch(() => {});
+  };
 
-  // Folder counts change on bulk moves, drops and organize actions anywhere
-  // in the app; those all dispatch 'docs-changed'.
   useEffect(() => {
-    const onDocsChanged = () => fetchFolders();
-    window.addEventListener('docs-changed', onDocsChanged);
-    return () => window.removeEventListener('docs-changed', onDocsChanged);
+    fetchFolders();
+    fetchTags();
+  }, [location.pathname]);
+
+  // Folder counts, tag counts and the tag list change on moves, deletes and
+  // tag/rule edits anywhere in the app; those announce 'docs-changed' or
+  // 'tags-changed'.
+  useEffect(() => {
+    const refresh = () => {
+      fetchFolders();
+      fetchTags();
+    };
+    window.addEventListener('docs-changed', refresh);
+    window.addEventListener('tags-changed', refresh);
+    return () => {
+      window.removeEventListener('docs-changed', refresh);
+      window.removeEventListener('tags-changed', refresh);
+    };
   }, []);
 
   const createFolder = async () => {
@@ -176,6 +196,11 @@ function Layout() {
   const goFolder = (id) => {
     setFoldersSheetOpen(false);
     navigate(id ? `/?folder=${id}` : '/');
+  };
+
+  const goTag = (id) => {
+    setFoldersSheetOpen(false);
+    navigate(`/?tag=${id}`);
   };
 
   return (
@@ -297,6 +322,68 @@ function Layout() {
                   }`}
                 >
                   <span className={`w-2.5 h-2.5 rounded-full ${FOLDER_COLORS[i % FOLDER_COLORS.length]}`} />
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Tags: click filters, pencil edits name/color/rules */}
+          {!collapsed ? (
+            <div className="pt-6">
+              <p className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider px-4 mb-2">
+                Tags
+              </p>
+              {tags.map((t) => (
+                <div
+                  key={t.id}
+                  className={`group flex items-center rounded-xl transition-colors ${
+                    activeTag === t.id
+                      ? 'bg-primary-50 dark:bg-primary-500/10'
+                      : 'hover:bg-gray-100 dark:hover:bg-gray-800'
+                  }`}
+                >
+                  <button
+                    onClick={() => navigate(`/?tag=${t.id}`)}
+                    className={`flex flex-1 min-w-0 items-center justify-between px-4 py-2 text-sm rounded-xl transition-colors ${
+                      activeTag === t.id
+                        ? 'text-primary-700 dark:text-primary-300 font-medium'
+                        : 'text-gray-600 dark:text-gray-300'
+                    }`}
+                    title={`Filter by #${t.name}`}
+                  >
+                    <span className="flex items-center min-w-0">
+                      <span className={`w-2.5 h-2.5 rounded-full mr-3 flex-shrink-0 ${tagDot(t)}`} />
+                      <span className="truncate">{t.name}</span>
+                    </span>
+                    <span className="text-xs text-gray-400 dark:text-gray-500 ml-2 flex-shrink-0">{t.document_count}</span>
+                  </button>
+                  <button
+                    onClick={() => setEditingTag(t)}
+                    title={`Edit "${t.name}"`}
+                    className="mr-2 p-1 rounded-lg text-gray-400 opacity-0 group-hover:opacity-100 hover:text-primary-600 hover:bg-white dark:hover:bg-gray-900 transition-opacity flex-shrink-0"
+                  >
+                    <PencilIcon className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ))}
+              {tags.length === 0 && (
+                <p className="px-4 py-2 text-sm text-gray-400 dark:text-gray-500">No tags yet</p>
+              )}
+            </div>
+          ) : (
+            <div className="pt-6 space-y-2">
+              {tags.map((t) => (
+                <button
+                  key={t.id}
+                  onClick={() => navigate(`/?tag=${t.id}`)}
+                  title={`${t.name} (${t.document_count})`}
+                  className={`flex items-center justify-center w-full py-2 rounded-xl transition-colors ${
+                    activeTag === t.id
+                      ? 'bg-primary-50 dark:bg-primary-500/10'
+                      : 'hover:bg-gray-100 dark:hover:bg-gray-800'
+                  }`}
+                >
+                  <span className={`w-2.5 h-2.5 rounded-full ${tagDot(t)}`} />
                 </button>
               ))}
             </div>
@@ -568,6 +655,28 @@ function Layout() {
             {folders.length === 0 && (
               <p className="px-4 py-2 text-sm text-gray-400 dark:text-gray-500">No folders yet</p>
             )}
+            {tags.length > 0 && (
+              <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-800">
+                <p className="px-4 pb-1 text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider">Tags</p>
+                {tags.map((t) => (
+                  <button
+                    key={t.id}
+                    onClick={() => goTag(t.id)}
+                    className={`flex items-center justify-between w-full px-4 py-3 text-sm rounded-xl transition-colors mb-1 ${
+                      activeTag === t.id
+                        ? 'bg-primary-50 dark:bg-primary-500/10 text-primary-700 dark:text-primary-300 font-medium'
+                        : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'
+                    }`}
+                  >
+                    <span className="flex items-center min-w-0">
+                      <span className={`w-2.5 h-2.5 rounded-full mr-3 flex-shrink-0 ${tagDot(t)}`} />
+                      <span className="truncate">{t.name}</span>
+                    </span>
+                    <span className="text-xs text-gray-400 dark:text-gray-500 ml-2 flex-shrink-0">{t.document_count}</span>
+                  </button>
+                ))}
+              </div>
+            )}
             <div className="flex gap-2 mt-3">
               <input
                 value={newFolderName}
@@ -596,6 +705,10 @@ function Layout() {
           names={uploadState.dupDialog.names}
           onChoose={resolveDuplicates}
         />
+      )}
+
+      {editingTag && (
+        <TagEditDialog tag={editingTag} onClose={() => setEditingTag(null)} />
       )}
     </div>
   );

@@ -27,6 +27,10 @@ MIGRATIONS = [
     ALTER TABLE users
         ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT FALSE
     """,
+    """
+    ALTER TABLE tags
+        ADD COLUMN IF NOT EXISTS color VARCHAR(20)
+    """,
     # Bootstrap: if nobody is an admin yet, the earliest account becomes one,
     # so existing installs keep a reachable admin after the upgrade.
     """

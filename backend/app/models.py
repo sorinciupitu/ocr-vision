@@ -109,11 +109,16 @@ class Folder(Base):
 
 
 class Tag(Base):
-    """User-created tag; a document can carry many tags."""
+    """User-created tag; a document can carry many tags.
+
+    color: one of the frontend palette keys (see OrganizeDialog.TAG_COLORS);
+    NULL means "derive from the name" (legacy tags keep their look).
+    """
     __tablename__ = "tags"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name = Column(String(100), nullable=False)
+    color = Column(String(20), nullable=True)
     owner_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 

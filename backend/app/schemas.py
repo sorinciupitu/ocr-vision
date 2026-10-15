@@ -47,6 +47,7 @@ class RegistrationStatus(BaseModel):
 class TagBrief(BaseModel):
     id: UUID4
     name: str
+    color: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -78,9 +79,16 @@ class TagCreate(BaseModel):
     name: str
 
 
+class TagUpdate(BaseModel):
+    """Partial update: only the provided fields change."""
+    name: Optional[str] = None
+    color: Optional[str] = None
+
+
 class TagResponse(BaseModel):
     id: UUID4
     name: str
+    color: Optional[str] = None
     document_count: int = 0
     created_at: datetime
 
@@ -152,6 +160,12 @@ class BulkDeleteResult(BaseModel):
 class TagRuleCreate(BaseModel):
     pattern: str
     tag_id: UUID4
+
+
+class TagRuleUpdate(BaseModel):
+    """Partial update: only the provided fields change."""
+    pattern: Optional[str] = None
+    is_active: Optional[bool] = None
 
 
 class TagRuleResponse(BaseModel):

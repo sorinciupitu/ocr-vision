@@ -8,7 +8,7 @@ from sqlalchemy import func
 from app.database import get_db
 from app.models import User, Tag, TagRule
 from app.dependencies import get_current_user
-from app.schemas import TagRuleCreate, TagRuleCreateResponse, TagRuleResponse
+from app.schemas import TagRuleCreate, TagRuleCreateResponse, TagRuleResponse, TagRuleUpdate
 from app.auto_tagging import backfill_rule
 
 router = APIRouter(prefix="/tag-rules", tags=["tag-rules"])
@@ -63,6 +63,56 @@ def create_rule(
 
     # Rules apply retroactively: tag every existing matching document now.
     matched = backfill_rule(db, rule)
+    return TagRuleCreateResponse(
+        id=rule.id,
+        pattern=rule.pattern,
+        is_active=rule.is_active,
+        created_at=rule.created_at,
+        tag=rule.tag,
+        matched_count=matched,
+    )
+
+
+@router.put("/{rule_id}", response_model=TagRuleCreateResponse)
+def update_rule(
+    rule_id: UUID,
+    data: TagRuleUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Edit a rule's pattern and/or active flag. Empty body is a no-op.
+
+    A changed pattern is backfilled over existing documents (same
+    mechanism as creation); tags applied by the old pattern stay.
+    """
+    rule = db.query(TagRule).filter(
+        TagRule.id == rule_id, TagRule.owner_id == current_user.id
+    ).first()
+    if not rule:
+        raise HTTPException(status_code=404, detail="Rule not found")
+
+    matched = 0
+    pattern_changed = False
+    if data.pattern is not None:
+        pattern = _normalize_pattern(data.pattern)
+        clash = db.query(TagRule).filter(
+            TagRule.owner_id == current_user.id,
+            TagRule.id != rule.id,
+            TagRule.tag_id == rule.tag_id,
+            func.lower(TagRule.pattern) == pattern.lower(),
+        ).first()
+        if clash:
+            raise HTTPException(status_code=409, detail="Rule already exists")
+        pattern_changed = pattern != rule.pattern
+        rule.pattern = pattern
+
+    if data.is_active is not None:
+        rule.is_active = data.is_active
+
+    db.commit()
+    db.refresh(rule)
+    if pattern_changed:
+        matched = backfill_rule(db, rule)
     return TagRuleCreateResponse(
         id=rule.id,
         pattern=rule.pattern,

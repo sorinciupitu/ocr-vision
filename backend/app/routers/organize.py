@@ -9,12 +9,15 @@ from app.database import get_db
 from app.models import User, Document, Folder, Tag, document_tags
 from app.dependencies import get_current_user
 from app.schemas import (
-    FolderCreate, FolderResponse, TagCreate, TagResponse,
+    FolderCreate, FolderResponse, TagCreate, TagUpdate, TagResponse,
     DocumentMove, DocumentTagsUpdate, DocumentResponse,
     BulkFolderUpdate, BulkTagsAdd, BulkResult,
 )
 
 router = APIRouter(tags=["organize"])
+
+# Palette keys the frontend knows how to render (OrganizeDialog.TAG_COLORS).
+TAG_PALETTE = {"sky", "emerald", "amber", "rose", "violet", "pink"}
 
 
 def _normalize(name: str) -> str:
@@ -111,7 +114,7 @@ def list_tags(
     tags = db.query(Tag).filter(Tag.owner_id == current_user.id).order_by(Tag.name).all()
     return [
         TagResponse(
-            id=t.id, name=t.name, created_at=t.created_at,
+            id=t.id, name=t.name, color=t.color, created_at=t.created_at,
             document_count=counts.get(t.id, 0),
         )
         for t in tags
@@ -136,7 +139,55 @@ def create_tag(
     db.add(tag)
     db.commit()
     db.refresh(tag)
-    return TagResponse(id=tag.id, name=tag.name, document_count=0, created_at=tag.created_at)
+    return TagResponse(
+        id=tag.id, name=tag.name, color=tag.color,
+        document_count=0, created_at=tag.created_at,
+    )
+
+
+@router.put("/tags/{tag_id}", response_model=TagResponse)
+def update_tag(
+    tag_id: UUID,
+    data: TagUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Rename a tag and/or set its palette color. Empty body is a no-op."""
+    tag = _get_owned_tag(tag_id, db, current_user)
+
+    if data.name is not None:
+        name = _normalize(data.name)
+        if len(name) > 100:
+            raise HTTPException(status_code=422, detail="Tag name too long (max 100)")
+        clash = db.query(Tag).filter(
+            Tag.owner_id == current_user.id,
+            Tag.id != tag.id,
+            func.lower(Tag.name) == name.lower(),
+        ).first()
+        if clash:
+            raise HTTPException(status_code=409, detail="Tag already exists")
+        tag.name = name
+
+    if data.color is not None:
+        if data.color not in TAG_PALETTE:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Invalid color; pick one of: {', '.join(sorted(TAG_PALETTE))}",
+            )
+        tag.color = data.color
+
+    db.commit()
+    db.refresh(tag)
+    count = (
+        db.query(func.count(document_tags.c.document_id))
+        .filter(document_tags.c.tag_id == tag.id)
+        .scalar()
+        or 0
+    )
+    return TagResponse(
+        id=tag.id, name=tag.name, color=tag.color,
+        document_count=count, created_at=tag.created_at,
+    )
 
 
 @router.delete("/tags/{tag_id}")

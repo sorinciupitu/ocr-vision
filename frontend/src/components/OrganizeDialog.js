@@ -5,7 +5,7 @@ import { Fragment } from 'react';
 import { FolderIcon, PlusIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import api from '../services/api';
 
-const TAG_COLORS = [
+export const TAG_COLORS = [
   'bg-sky-100 text-sky-700 dark:bg-sky-500/20 dark:text-sky-300',
   'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300',
   'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300',
@@ -14,8 +14,32 @@ const TAG_COLORS = [
   'bg-pink-100 text-pink-700 dark:bg-pink-500/20 dark:text-pink-300',
 ];
 
-export const tagColor = (name) =>
-  TAG_COLORS[[...name].reduce((a, c) => a + c.charCodeAt(0), 0) % TAG_COLORS.length];
+// Palette keys stored in tags.color (must match backend TAG_PALETTE).
+export const TAG_KEYS = ['sky', 'emerald', 'amber', 'rose', 'violet', 'pink'];
+
+// Accepts a tag object (uses its saved color) or a bare name (legacy
+// behavior: derive the color from the name so old tags keep their look).
+export const tagColor = (t) => {
+  const name = typeof t === 'string' ? t : t.name;
+  const key = typeof t === 'string' ? null : t.color;
+  const saved = key != null ? TAG_KEYS.indexOf(key) : -1;
+  if (saved >= 0) return TAG_COLORS[saved];
+  return TAG_COLORS[[...name].reduce((a, c) => a + c.charCodeAt(0), 0) % TAG_COLORS.length];
+};
+
+// Solid dot variants (sidebar), same key order as TAG_COLORS.
+const TAG_DOTS = [
+  'bg-sky-500', 'bg-emerald-500', 'bg-amber-500',
+  'bg-rose-500', 'bg-violet-500', 'bg-pink-500',
+];
+
+export const tagDot = (t) => {
+  const name = typeof t === 'string' ? t : t.name;
+  const key = typeof t === 'string' ? null : t.color;
+  const saved = key != null ? TAG_KEYS.indexOf(key) : -1;
+  if (saved >= 0) return TAG_DOTS[saved];
+  return TAG_DOTS[[...name].reduce((a, c) => a + c.charCodeAt(0), 0) % TAG_DOTS.length];
+};
 
 export default function OrganizeDialog({ doc, folders, tags, onClose, onChanged }) {
   const [newFolder, setNewFolder] = useState('');
@@ -187,7 +211,7 @@ export default function OrganizeDialog({ doc, folders, tags, onClose, onChanged 
                           onClick={() => toggleTag(t)}
                           disabled={busy}
                           className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium transition-opacity ${
-                            active ? tagColor(t.name) : 'bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500 opacity-60 hover:opacity-100'
+                            active ? tagColor(t) : 'bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-500 opacity-60 hover:opacity-100'
                           }`}
                         >
                           {t.name}
