@@ -76,15 +76,43 @@ async def ocr_image(img: Image.Image, prompt: str = "") -> str:
         "top_p": 0.9,
     }
 
-    async with httpx.AsyncClient(timeout=120.0) as client:
-        try:
+    timeout_seconds = settings.ocr_request_timeout_seconds
+    timeout = httpx.Timeout(
+        timeout_seconds,
+        connect=30.0,
+        pool=timeout_seconds,
+    )
+
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
             response = await client.post(settings.vllm_url, json=payload)
             response.raise_for_status()
             result = response.json()
             return result["choices"][0]["message"]["content"]
-        except httpx.HTTPError as e:
-            logger.error(f"OCR API error: {e}")
-            raise RuntimeError(f"OCR API request failed: {e}")
+    except httpx.TimeoutException as e:
+        detail = (
+            f"timeout after {timeout_seconds:g}s while waiting for vLLM "
+            f"({type(e).__name__})"
+        )
+        logger.error("OCR API timeout: %s", detail, exc_info=True)
+        raise RuntimeError(f"OCR API request failed: {detail}") from e
+    except httpx.HTTPStatusError as e:
+        body = e.response.text.strip().replace("\n", " ")
+        if len(body) > 1000:
+            body = body[:1000] + "..."
+        detail = f"HTTP {e.response.status_code} from vLLM"
+        if body:
+            detail += f": {body}"
+        logger.error("OCR API error: %s", detail)
+        raise RuntimeError(f"OCR API request failed: {detail}") from e
+    except httpx.RequestError as e:
+        detail = f"{type(e).__name__}: {str(e) or repr(e)}"
+        logger.error("OCR API connection error: %s", detail, exc_info=True)
+        raise RuntimeError(f"OCR API request failed: {detail}") from e
+    except (KeyError, IndexError, TypeError, ValueError) as e:
+        detail = f"invalid vLLM response ({type(e).__name__}: {e})"
+        logger.error("OCR API response error: %s", detail, exc_info=True)
+        raise RuntimeError(f"OCR API request failed: {detail}") from e
 
 
 async def process_file(file_path: str) -> Tuple[str, int, List[str]]:

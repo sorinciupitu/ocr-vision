@@ -6,6 +6,7 @@ are retried up to OCR_MAX_RETRIES times with exponential backoff
 show why OCR failed and offer a manual retry.
 """
 import asyncio
+import logging
 import os
 
 from sqlalchemy import func
@@ -17,6 +18,7 @@ from app.models import Document, DocumentPage
 from app.ocr_service import process_file, create_thumbnail
 
 settings = get_settings()
+logger = logging.getLogger(__name__)
 
 
 def _try_thumbnail(document_id, file_path):
@@ -70,7 +72,14 @@ async def run_ocr_with_retries(document_id, db: Session, max_attempts=None, base
             return
         except Exception as e:
             last_error = f"Attempt {attempt}/{max_attempts}: {e}"
-            print(f"OCR attempt {attempt}/{max_attempts} failed for {document_id}: {e}")
+            logger.error(
+                "OCR attempt %s/%s failed for %s: %s",
+                attempt,
+                max_attempts,
+                document_id,
+                last_error,
+                exc_info=True,
+            )
             doc = db.query(Document).filter(Document.id == document_id).first()
             if doc:
                 doc.ocr_error = last_error[:1000]

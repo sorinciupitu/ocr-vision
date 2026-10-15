@@ -55,6 +55,8 @@ A modern, Dockerized web application for archiving physical documents and search
    Drag and drop files to manually upload and begin the OCR process.
 
    Administrators can configure the AI provider and inspect the server runtime console from **Settings**. The floating brain button opens **AI Chat**. For Ollama running on the Linux host while the app runs in Docker, the default endpoint is `http://host.docker.internal:11434/v1/chat/completions`; `docker-compose.yml` maps that hostname to the host gateway.
+
+   OCR requests allow up to 300 seconds per image by default. For unusually large or complex scans, adjust `OCR_REQUEST_TIMEOUT_SECONDS` in `docker-compose.yml` and recreate the backend container. Failed OCR entries now include the HTTP response, timeout type, or connection error in the queue and runtime console.
 3. **Sync Folders**:
    Add a local folder tracking path (`/app/local_sync` is mapped to `./sample_documents` by default in docker-compose). Click **Scan** to ingest everything the folder holds.
 4. **Organize**:

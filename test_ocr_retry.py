@@ -110,6 +110,7 @@ doc = upload(f"zz{suffix}-down.png")
 check("vllm down -> failed status", doc["ocr_status"] == "failed", str(doc))
 check("vllm down -> all retry attempts counted", doc["ocr_attempts"] == 3, str(doc))
 check("vllm down -> error mentions attempt", "Attempt 3/3" in (doc["ocr_error"] or ""), str(doc))
+check("vllm down -> error includes HTTP details", "HTTP 500" in (doc["ocr_error"] or "") and "stub vLLM down" in (doc["ocr_error"] or ""), str(doc))
 
 r = client.get(f"/api/documents/{doc['id']}", headers=H)
 check("detail exposes status fields", r.json().get("ocr_attempts") == 3 and bool(r.json().get("ocr_error")), r.text)
