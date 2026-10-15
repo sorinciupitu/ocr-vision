@@ -12,7 +12,10 @@ from sqlalchemy import text, func
 from app.database import get_db
 from app.models import User, Document, DocumentPage, Tag, Folder
 from app.dependencies import get_current_user, get_current_user_media
-from app.schemas import DocumentResponse, DocumentDetailResponse, SearchResult, BulkDeleteRequest, BulkDeleteResult
+from app.schemas import (
+    DocumentResponse, DocumentDetailResponse, SearchResult, BulkDeleteRequest,
+    BulkDeleteResult, DuplicateCheckRequest, DuplicateCheckResponse,
+)
 from app.config import get_settings
 from app.ocr_runner import run_ocr_with_retries
 
@@ -71,6 +74,31 @@ async def upload_document(
     background_tasks.add_task(run_ocr_with_retries, new_doc.id, db)
 
     return new_doc
+
+
+@router.post("/duplicates/check", response_model=DuplicateCheckResponse)
+def check_duplicates(
+    data: DuplicateCheckRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Report which of the given filenames the user already has, so the UI
+    can warn about duplicates before uploading (case-insensitive match)."""
+    wanted = []
+    seen = set()
+    for raw in data.names[:200]:
+        name = (raw or "").strip()
+        if name and name.lower() not in seen:
+            seen.add(name.lower())
+            wanted.append(name)
+    if not wanted:
+        return {"existing": []}
+    rows = db.query(Document.original_filename).filter(
+        Document.owner_id == current_user.id,
+        func.lower(Document.original_filename).in_([w.lower() for w in wanted]),
+    ).all()
+    have = {row[0].lower() for row in rows}
+    return {"existing": [w for w in wanted if w.lower() in have]}
 
 
 @router.get("", response_model=List[DocumentResponse])

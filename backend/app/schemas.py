@@ -110,6 +110,7 @@ class DocumentResponse(BaseModel):
     folder: Optional[FolderBrief] = None
     tags: List[TagBrief] = []
     created_at: datetime
+    updated_at: datetime
     
     class Config:
         from_attributes = True
@@ -180,3 +181,13 @@ class AnalyticsSummary(BaseModel):
     tags: int
     folders: int
     by_month: List[MonthlyCount]
+
+
+class DuplicateCheckRequest(BaseModel):
+    names: List[str]
+
+
+class DuplicateCheckResponse(BaseModel):
+    # Subset of the requested names (as spelled by the caller) that already
+    # exist as documents of the current user.
+    existing: List[str]

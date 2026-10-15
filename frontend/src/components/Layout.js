@@ -12,6 +12,13 @@ import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
 import ThemeToggle from './ThemeToggle';
 import SearchOverlay from './SearchOverlay';
+import DuplicateDialog from './DuplicateDialog';
+import {
+  enqueueUploadFiles,
+  subscribeUploads,
+  getUploadState,
+  resolveDuplicates,
+} from '../services/uploadQueue';
 
 const navigation = [
   { name: 'Dashboard', href: '/', icon: DocumentPlusIcon },
@@ -47,7 +54,7 @@ function Layout() {
   const navigate = useNavigate();
   const location = useLocation();
   const fileInputRef = useRef(null);
-  const [uploading, setUploading] = useState(false);
+  const [uploadState, setUploadState] = useState(getUploadState);
   const [folders, setFolders] = useState([]);
   const [newFolderName, setNewFolderName] = useState('');
   const [creatingFolder, setCreatingFolder] = useState(false);
@@ -61,6 +68,14 @@ function Layout() {
   useEffect(() => {
     localStorage.setItem('sidebar-collapsed', collapsed ? 'true' : 'false');
   }, [collapsed]);
+
+  // Mirror the shared upload queue: it drives the header button's busy
+  // state and the duplicate-file dialog shown on every page.
+  useEffect(() => subscribeUploads(() => setUploadState(getUploadState())), []);
+
+  const uploading = uploadState.uploads.some(
+    (u) => u.status === 'queued' || u.status === 'uploading'
+  );
 
   // Global shortcut: Cmd/Ctrl+K toggles the search overlay, like vite.dev.
   useEffect(() => {
@@ -146,23 +161,16 @@ function Layout() {
     (location.pathname === '/' && activeFolderObj && activeFolderObj.name) ||
     PAGE_TITLES[location.pathname] || 'Document';
 
-  const handleUpload = async (e) => {
-    const file = e.target.files && e.target.files[0];
+  const handleUpload = (e) => {
+    // Copy the FileList before resetting the input: clearing value empties
+    // the live list the handler still holds.
+    const files = Array.from(e.target.files || []);
     e.target.value = '';
-    if (!file) return;
-    const formData = new FormData();
-    formData.append('file', file);
-    setUploading(true);
-    try {
-      await api.post('/documents/upload', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
-      toast.success(`Uploaded ${file.name}`);
-      navigate('/');
-    } catch (err) {
-      toast.error(`Failed to upload ${file.name}`);
-    }
-    setUploading(false);
+    if (!files.length) return;
+    // Same queue as the dashboard dropzone: per-file progress, retries and
+    // the duplicate-name dialog.
+    enqueueUploadFiles(files, activeFolder || null);
+    navigate('/');
   };
 
   const goFolder = (id) => {
@@ -582,6 +590,13 @@ function Layout() {
       )}
 
       <SearchOverlay open={searchOpen} onClose={() => setSearchOpen(false)} />
+
+      {uploadState.dupDialog && (
+        <DuplicateDialog
+          names={uploadState.dupDialog.names}
+          onChoose={resolveDuplicates}
+        />
+      )}
     </div>
   );
 }

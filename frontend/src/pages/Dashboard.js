@@ -7,7 +7,8 @@ import {
   CloudArrowUpIcon, EyeIcon, DocumentMagnifyingGlassIcon,
   ArrowPathIcon, TrashIcon, ArrowTopRightOnSquareIcon,
   MagnifyingGlassIcon, FolderArrowDownIcon, ArrowUpTrayIcon,
-  FolderIcon, TagIcon, CheckIcon, SparklesIcon
+  FolderIcon, TagIcon, CheckIcon, SparklesIcon,
+  Squares2X2Icon, TableCellsIcon, ListBulletIcon
 } from '@heroicons/react/24/outline';
 import { Menu } from '@headlessui/react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -16,6 +17,16 @@ import ConfirmDialog from '../components/ConfirmDialog';
 import OrganizeDialog, { tagColor } from '../components/OrganizeDialog';
 import ContextMenu from '../components/ContextMenu';
 import AutoTagRulesDialog from '../components/AutoTagRulesDialog';
+import ProcessingQueue from '../components/ProcessingQueue';
+import {
+  enqueueUploadFiles,
+  subscribeUploads,
+  getUploadState,
+  retryUpload,
+  retryAllUploads,
+  clearFinishedUploads,
+  resolveDuplicates,
+} from '../services/uploadQueue';
 
 const statusStyle = {
   completed: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300',
@@ -35,7 +46,14 @@ export default function Dashboard() {
   const [documents, setDocuments] = useState([]);
   const [folders, setFolders] = useState([]);
   const [tags, setTags] = useState([]);
-  const [uploading, setUploading] = useState(false);
+  const [uploadState, setUploadState] = useState(getUploadState);
+  const [viewMode, setViewModeState] = useState(() => {
+    try { return localStorage.getItem('docview') || 'grid4'; } catch (e) { return 'grid4'; }
+  });
+  const [marquee, setMarquee] = useState(null);
+  const marqueeStartRef = useRef(null);
+  const marqueePosRef = useRef(null);
+  const marqueeBaseRef = useRef(null);
   const [busyId, setBusyId] = useState(null);
   const [confirmDoc, setConfirmDoc] = useState(null);
   const [organizeDoc, setOrganizeDoc] = useState(null);
@@ -80,25 +98,22 @@ export default function Dashboard() {
     fetchMeta();
   }, []);
 
-  const uploadFiles = useCallback(async (files) => {
-    if (!files || files.length === 0) return;
-    setUploading(true);
-    for (const file of files) {
-      const formData = new FormData();
-      formData.append('file', file);
-      if (folderId) formData.append('folder_id', folderId);
-      try {
-        await api.post('/documents/upload', formData, {
-          headers: { 'Content-Type': 'multipart/form-data' }
-        });
-        toast.success(`Uploaded ${file.name}`);
-      } catch (err) {
-        toast.error(`Failed to upload ${file.name}`);
-      }
-    }
-    setUploading(false);
-    window.dispatchEvent(new CustomEvent('docs-changed'));
-  }, [folderId, fetchDocuments]);
+  // The upload queue lives in a shared module store so the header/FAB
+  // upload path behaves the same; this just mirrors it into the page.
+  useEffect(() => subscribeUploads(() => setUploadState(getUploadState())), []);
+
+  const { uploads: uploadQueue } = uploadState;
+  const uploading = uploadQueue.some((u) => u.status === 'queued' || u.status === 'uploading');
+
+  const uploadFiles = useCallback(
+    (files) => enqueueUploadFiles(files, folderId),
+    [folderId]
+  );
+
+  const setViewMode = (v) => {
+    setViewModeState(v);
+    try { localStorage.setItem('docview', v); } catch (e) { /* private mode */ }
+  };
 
   const onDrop = useCallback((acceptedFiles) => uploadFiles(acceptedFiles), [uploadFiles]);
   const { getRootProps, getInputProps, isDragActive } = useDropzone({ onDrop });
@@ -133,6 +148,22 @@ export default function Dashboard() {
       toast.error(err.response?.data?.detail || 'Failed to retry document');
     }
     setBusyId(null);
+  };
+
+  const retryAllFailedDocs = async () => {
+    const failed = documents.filter((d) => d.ocr_status === 'failed');
+    if (!failed.length) return;
+    let ok = 0;
+    for (const d of failed) {
+      try {
+        await api.post(`/documents/${d.id}/retry`);
+        ok += 1;
+      } catch (err) {
+        // Failures stay visible in the queue list after the refresh.
+      }
+    }
+    toast.success(`Retrying ${ok} failed document${ok === 1 ? '' : 's'}`);
+    fetchDocuments();
   };
 
   const handleDelete = async () => {
@@ -200,6 +231,65 @@ export default function Dashboard() {
     }
     setContextMenu({ x: e.clientX, y: e.clientY, doc });
   };
+
+  // ---------- rubber-band selection ----------
+  // Starts only from empty space (cards stay draggable to folders); Shift
+  // extends the existing selection instead of replacing it.
+  const onGridMouseDown = (e) => {
+    if (e.button !== 0 || e.metaKey || e.ctrlKey) return;
+    if (e.target.closest('[data-doc-card],button,a,input,select,textarea')) return;
+    e.preventDefault();
+    marqueeStartRef.current = { x: e.clientX, y: e.clientY };
+    marqueePosRef.current = { x: e.clientX, y: e.clientY };
+    marqueeBaseRef.current = e.shiftKey ? new Set(selectedIds) : null;
+    setMarquee({ x1: e.clientX, y1: e.clientY, x2: e.clientX, y2: e.clientY });
+  };
+
+  const marqueeActive = !!marquee;
+  useEffect(() => {
+    if (!marqueeActive) return undefined;
+    const onMove = (e) => {
+      const start = marqueeStartRef.current;
+      if (!start) return;
+      marqueePosRef.current = { x: e.clientX, y: e.clientY };
+      setMarquee((m) => (m ? { ...m, x2: e.clientX, y2: e.clientY } : m));
+      // Below the threshold it is still a click, not a drag.
+      if (Math.abs(e.clientX - start.x) < 4 && Math.abs(e.clientY - start.y) < 4) return;
+      const rect = {
+        left: Math.min(start.x, e.clientX),
+        right: Math.max(start.x, e.clientX),
+        top: Math.min(start.y, e.clientY),
+        bottom: Math.max(start.y, e.clientY),
+      };
+      const next = marqueeBaseRef.current ? new Set(marqueeBaseRef.current) : new Set();
+      document.querySelectorAll('[data-doc-card]').forEach((el) => {
+        const b = el.getBoundingClientRect();
+        if (b.left < rect.right && b.right > rect.left && b.top < rect.bottom && b.bottom > rect.top) {
+          next.add(el.getAttribute('data-doc-id'));
+        }
+      });
+      setSelectedIds(next);
+    };
+    const onUp = () => {
+      const start = marqueeStartRef.current;
+      const pos = marqueePosRef.current;
+      const moved = start && pos
+        && (Math.abs(pos.x - start.x) >= 4 || Math.abs(pos.y - start.y) >= 4);
+      const wasShift = !!marqueeBaseRef.current;
+      setMarquee(null);
+      marqueeStartRef.current = null;
+      marqueePosRef.current = null;
+      marqueeBaseRef.current = null;
+      // A plain click on empty space clears the selection, as before.
+      if (!moved && !wasShift) clearSelection();
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+  }, [marqueeActive]);
 
   // ---------- bulk operations ----------
   const bulkMove = async (ids, folderId) => {
@@ -286,6 +376,197 @@ export default function Dashboard() {
       ]
     : [];
 
+  // ---------- per-document building blocks (shared by the views) ----------
+  const dragProps = {
+    draggable: true,
+    onDragStart: (e, doc) => {
+      const ids = selectedIds.has(doc.id) ? [...selectedIds] : [doc.id];
+      if (!selectedIds.has(doc.id)) setSelectedIds(new Set([doc.id]));
+      e.dataTransfer.setData('application/x-doc-ids', JSON.stringify(ids));
+      e.dataTransfer.setData('text/plain', JSON.stringify(ids));
+      e.dataTransfer.effectAllowed = 'move';
+    },
+  };
+
+  const selectBtn = (doc) => (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        toggleSelect(doc.id);
+      }}
+      className={`absolute top-2 left-2 z-10 w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${
+        selectedIds.has(doc.id)
+          ? 'bg-primary-500 border-primary-500 text-white'
+          : 'bg-white/90 dark:bg-gray-800/90 border-gray-300 dark:border-gray-600 text-transparent hover:border-primary-500'
+      }`}
+      title={selectedIds.has(doc.id) ? 'Deselect' : 'Select'}
+    >
+      <CheckIcon className="w-4 h-4" />
+    </button>
+  );
+
+  const metaText = (doc) =>
+    `${format(new Date(doc.created_at), 'PP')} • ${(doc.file_size / 1024 / 1024).toFixed(2)} MB • ${doc.page_count} pg`;
+
+  const tagsRow = (doc) =>
+    (doc.folder || (doc.tags && doc.tags.length > 0)) ? (
+      <div className="flex flex-wrap items-center gap-1.5 mt-2">
+        {doc.folder && (
+          <span className="inline-flex items-center text-xs text-gray-500 dark:text-gray-400">
+            <FolderIcon className="w-3.5 h-3.5 mr-1" />
+            {doc.folder.name}
+          </span>
+        )}
+        {(doc.tags || []).map((t) => (
+          <span key={t.id} className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium ${tagColor(t.name)}`}>
+            {t.name}
+          </span>
+        ))}
+      </div>
+    ) : null;
+
+  const statusPill = (doc) => (
+    <span
+      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${statusStyle[doc.ocr_status] || statusStyle.pending}`}
+      title={doc.ocr_error || statusLabel[doc.ocr_status] || doc.ocr_status}
+    >
+      {(doc.ocr_status === 'processing' || doc.ocr_status === 'pending') && (
+        <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse mr-1.5" />
+      )}
+      {statusLabel[doc.ocr_status] || doc.ocr_status}
+    </span>
+  );
+
+  const retryBadge = (doc) =>
+    doc.ocr_status === 'failed' ? (
+      <button
+        type="button"
+        onClick={() => handleRetry(doc)}
+        disabled={busyId === doc.id}
+        className="inline-flex items-center gap-1 text-xs font-semibold text-red-600 dark:text-red-400 hover:underline disabled:opacity-50"
+        title={doc.ocr_error || 'Retry OCR'}
+      >
+        <ArrowPathIcon className={`w-3.5 h-3.5 ${busyId === doc.id ? 'animate-spin' : ''}`} />
+        Retry
+      </button>
+    ) : null;
+
+  const actionBtns = (doc) => (
+    <div className="flex items-center space-x-1">
+      <button onClick={() => setOrganizeDoc(doc)} className={iconBtn} title="Move to folder / tags">
+        <FolderIcon className="w-4 h-4" />
+      </button>
+      <button onClick={() => openOriginal(doc)} className={iconBtn} title="View original file">
+        <ArrowTopRightOnSquareIcon className="w-4 h-4" />
+      </button>
+      <button onClick={() => handleReprocess(doc)} disabled={busyId === doc.id} className={`${iconBtn} disabled:opacity-50`} title="Reprocess OCR">
+        <ArrowPathIcon className={`w-4 h-4 ${busyId === doc.id ? 'animate-spin' : ''}`} />
+      </button>
+      <button onClick={() => navigate(`/document/${doc.id}`)} className={iconBtn} title="View details">
+        <EyeIcon className="w-4 h-4" />
+      </button>
+      <button onClick={() => setConfirmDoc(doc)} className="text-gray-400 dark:text-gray-500 hover:text-red-600 p-1.5 rounded-full hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors" title="Delete document">
+        <TrashIcon className="w-4 h-4" />
+      </button>
+    </div>
+  );
+
+  const docCardClass = (doc, extra = '') =>
+    `${cardClass} relative hover:shadow-md transition-shadow overflow-hidden cursor-default ${extra} ${
+      selectedIds.has(doc.id) ? 'ring-2 ring-primary-500' : ''
+    }`;
+
+  const renderCard = (doc) => {
+    const dense = viewMode === 'grid8';
+    return (
+      <div
+        key={doc.id}
+        data-doc-card
+        data-doc-id={doc.id}
+        onClick={(e) => handleCardClick(e, doc)}
+        onContextMenu={(e) => handleContextMenu(e, doc)}
+        draggable
+        onDragStart={(e) => dragProps.onDragStart(e, doc)}
+        className={docCardClass(doc, 'flex flex-col')}
+      >
+        <button
+          type="button"
+          onClick={() => navigate(`/document/${doc.id}`)}
+          className="block w-full"
+        >
+          <Thumbnail document={doc} className={`w-full ${dense ? 'h-24' : 'h-40'} rounded-none border-b border-gray-100 dark:border-gray-800`} />
+        </button>
+        {selectBtn(doc)}
+        <div className={`${dense ? 'p-2.5' : 'p-4'} flex flex-col flex-1`}>
+          <button
+            type="button"
+            onClick={() => navigate(`/document/${doc.id}`)}
+            className={`${dense ? 'text-xs' : 'text-sm'} font-semibold text-gray-900 dark:text-gray-100 hover:text-primary-600 text-left truncate`}
+            title={doc.original_filename}
+          >
+            {doc.original_filename}
+          </button>
+          <p className={`text-xs text-gray-500 dark:text-gray-400 ${dense ? 'mt-0.5' : 'mt-1'}`} title={metaText(doc)}>
+            {dense ? `${(doc.file_size / 1024 / 1024).toFixed(1)} MB` : metaText(doc)}
+          </p>
+          {!dense && tagsRow(doc)}
+          <div className={`flex items-center justify-between gap-2 ${dense ? 'mt-2' : 'mt-3 flex-wrap'}`}>
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0">
+              {statusPill(doc)}
+              {retryBadge(doc)}
+            </div>
+            {actionBtns(doc)}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderListRow = (doc) => (
+    <div
+      key={doc.id}
+      data-doc-card
+      data-doc-id={doc.id}
+      onClick={(e) => handleCardClick(e, doc)}
+      onContextMenu={(e) => handleContextMenu(e, doc)}
+      draggable
+      onDragStart={(e) => dragProps.onDragStart(e, doc)}
+      className={docCardClass(doc, 'flex items-center gap-4 px-4 py-2.5')}
+    >
+      {selectBtn(doc)}
+      <button
+        type="button"
+        onClick={() => navigate(`/document/${doc.id}`)}
+        className="flex-shrink-0 ml-4"
+      >
+        <Thumbnail document={doc} className="w-16 h-12" />
+      </button>
+      <div className="flex-1 min-w-0">
+        <button
+          type="button"
+          onClick={() => navigate(`/document/${doc.id}`)}
+          className="text-sm font-semibold text-gray-900 dark:text-gray-100 hover:text-primary-600 text-left truncate block"
+          title={doc.original_filename}
+        >
+          {doc.original_filename}
+        </button>
+        <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
+          {metaText(doc)}
+          {doc.folder && ` • ${doc.folder.name}`}
+          {(doc.tags || []).map((t) => ` #${t.name}`).join('')}
+        </p>
+      </div>
+      <div className="flex items-center gap-3 flex-shrink-0">
+        <div className="flex items-center gap-x-2">
+          {statusPill(doc)}
+          {retryBadge(doc)}
+        </div>
+        {actionBtns(doc)}
+      </div>
+    </div>
+  );
+
   return (
     <div className="space-y-8">
       {/* Get started */}
@@ -314,7 +595,12 @@ export default function Dashboard() {
           multiple
           accept=".pdf,.png,.jpg,.jpeg,.tiff,.bmp,.docx"
           className="hidden"
-          onChange={(e) => { uploadFiles(e.target.files); e.target.value = ''; }}
+          onChange={(e) => {
+            // Copy before clearing: the FileList is live and empties with value.
+            const files = Array.from(e.target.files || []);
+            e.target.value = '';
+            uploadFiles(files);
+          }}
         />
       </div>
 
@@ -333,11 +619,23 @@ export default function Dashboard() {
           {isDragActive ? "Drop the files here..." : "Drag & drop files here, or click to select"}
         </p>
         <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Supports PDF, DOCX, PNG, JPG, JPEG, TIFF (Max 50MB)</p>
-        {uploading && <div className="mt-3 text-primary-600 font-medium animate-pulse">Uploading...</div>}
+        {uploading && <div className="mt-3 text-primary-600 font-medium animate-pulse">Uploading… see the queue below</div>}
       </div>
 
+      <ProcessingQueue
+        uploads={uploadQueue}
+        documents={documents}
+        busyId={busyId}
+        onRetryUpload={retryUpload}
+        onRetryAllUploads={retryAllUploads}
+        onClearFinished={clearFinishedUploads}
+        onRetryDoc={handleRetry}
+        onReprocessDoc={handleReprocess}
+        onRetryAllFailed={retryAllFailedDocs}
+      />
+
       {/* Recent archives */}
-      <div>
+      <div onMouseDown={onGridMouseDown}>
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
             {folderId && folders.find((f) => f.id === folderId)
@@ -362,6 +660,28 @@ export default function Dashboard() {
               <option value="name">Sort By: Name</option>
               <option value="status">Sort By: Status</option>
             </select>
+            <div className="flex items-center border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden bg-white dark:bg-gray-900">
+              {[
+                { id: 'grid4', icon: Squares2X2Icon, title: 'Grid · 4 columns' },
+                { id: 'grid8', icon: TableCellsIcon, title: 'Grid · 8 columns' },
+                { id: 'list', icon: ListBulletIcon, title: 'List' },
+              ].map(({ id, icon: Icon, title }) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setViewMode(id)}
+                  title={title}
+                  aria-pressed={viewMode === id}
+                  className={`p-2 transition-colors ${
+                    viewMode === id
+                      ? 'bg-primary-500 text-white'
+                      : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'
+                  }`}
+                >
+                  <Icon className="w-4 h-4" />
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -408,118 +728,16 @@ export default function Dashboard() {
             <p>{folderId || tagId ? 'No documents match this filter.' : 'No documents archived yet.'}</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5">
-            {sortedDocuments.map((doc) => (
-              <div
-                key={doc.id}
-                onClick={(e) => handleCardClick(e, doc)}
-                onContextMenu={(e) => handleContextMenu(e, doc)}
-                draggable
-                onDragStart={(e) => {
-                  const ids = selectedIds.has(doc.id) ? [...selectedIds] : [doc.id];
-                  if (!selectedIds.has(doc.id)) setSelectedIds(new Set([doc.id]));
-                  e.dataTransfer.setData('application/x-doc-ids', JSON.stringify(ids));
-                  e.dataTransfer.setData('text/plain', JSON.stringify(ids));
-                  e.dataTransfer.effectAllowed = 'move';
-                }}
-                className={`${cardClass} relative hover:shadow-md transition-shadow overflow-hidden flex flex-col cursor-default ${
-                  selectedIds.has(doc.id) ? 'ring-2 ring-primary-500' : ''
-                }`}
-              >
-                <button
-                  type="button"
-                  onClick={() => navigate(`/document/${doc.id}`)}
-                  className="block w-full"
-                >
-                  <Thumbnail document={doc} className="w-full h-40 rounded-none border-b border-gray-100 dark:border-gray-800" />
-                </button>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    toggleSelect(doc.id);
-                  }}
-                  className={`absolute top-2 left-2 z-10 w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${
-                    selectedIds.has(doc.id)
-                      ? 'bg-primary-500 border-primary-500 text-white'
-                      : 'bg-white/90 dark:bg-gray-800/90 border-gray-300 dark:border-gray-600 text-transparent hover:border-primary-500'
-                  }`}
-                  title={selectedIds.has(doc.id) ? 'Deselect' : 'Select'}
-                >
-                  <CheckIcon className="w-4 h-4" />
-                </button>
-                <div className="p-4 flex flex-col flex-1">
-                  <button
-                    type="button"
-                    onClick={() => navigate(`/document/${doc.id}`)}
-                    className="text-sm font-semibold text-gray-900 dark:text-gray-100 hover:text-primary-600 text-left truncate"
-                    title={doc.original_filename}
-                  >
-                    {doc.original_filename}
-                  </button>
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                    {format(new Date(doc.created_at), 'PP')} • {(doc.file_size / 1024 / 1024).toFixed(2)} MB • {doc.page_count} pg
-                  </p>
-                  {(doc.folder || (doc.tags && doc.tags.length > 0)) && (
-                    <div className="flex flex-wrap items-center gap-1.5 mt-2">
-                      {doc.folder && (
-                        <span className="inline-flex items-center text-xs text-gray-500 dark:text-gray-400">
-                          <FolderIcon className="w-3.5 h-3.5 mr-1" />
-                          {doc.folder.name}
-                        </span>
-                      )}
-                      {(doc.tags || []).map((t) => (
-                        <span key={t.id} className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium ${tagColor(t.name)}`}>
-                          {t.name}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                  <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 min-w-0">
-                      <span
-                        className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${statusStyle[doc.ocr_status] || statusStyle.pending}`}
-                        title={doc.ocr_error || statusLabel[doc.ocr_status] || doc.ocr_status}
-                      >
-                        {(doc.ocr_status === 'processing' || doc.ocr_status === 'pending') && (
-                          <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse mr-1.5" />
-                        )}
-                        {statusLabel[doc.ocr_status] || doc.ocr_status}
-                      </span>
-                      {doc.ocr_status === 'failed' && (
-                        <button
-                          type="button"
-                          onClick={() => handleRetry(doc)}
-                          disabled={busyId === doc.id}
-                          className="inline-flex items-center gap-1 text-xs font-semibold text-red-600 dark:text-red-400 hover:underline disabled:opacity-50"
-                          title={doc.ocr_error || 'Retry OCR'}
-                        >
-                          <ArrowPathIcon className={`w-3.5 h-3.5 ${busyId === doc.id ? 'animate-spin' : ''}`} />
-                          Retry
-                        </button>
-                      )}
-                    </div>
-                    <div className="flex items-center space-x-1">
-                      <button onClick={() => setOrganizeDoc(doc)} className={iconBtn} title="Move to folder / tags">
-                        <FolderIcon className="w-4 h-4" />
-                      </button>
-                      <button onClick={() => openOriginal(doc)} className={iconBtn} title="View original file">
-                        <ArrowTopRightOnSquareIcon className="w-4 h-4" />
-                      </button>
-                      <button onClick={() => handleReprocess(doc)} disabled={busyId === doc.id} className={`${iconBtn} disabled:opacity-50`} title="Reprocess OCR">
-                        <ArrowPathIcon className={`w-4 h-4 ${busyId === doc.id ? 'animate-spin' : ''}`} />
-                      </button>
-                      <button onClick={() => navigate(`/document/${doc.id}`)} className={iconBtn} title="View details">
-                        <EyeIcon className="w-4 h-4" />
-                      </button>
-                      <button onClick={() => setConfirmDoc(doc)} className="text-gray-400 dark:text-gray-500 hover:text-red-600 p-1.5 rounded-full hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors" title="Delete document">
-                        <TrashIcon className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ))}
+          <div
+            className={
+              viewMode === 'list'
+                ? 'flex flex-col gap-2'
+                : viewMode === 'grid8'
+                  ? 'grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-8 gap-3'
+                  : 'grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5'
+            }
+          >
+            {sortedDocuments.map((doc) => (viewMode === 'list' ? renderListRow(doc) : renderCard(doc)))}
           </div>
         )}
       </div>
@@ -600,6 +818,20 @@ export default function Dashboard() {
           </button>
         </div>
       )}
+
+      {marquee && (
+        <div
+          className="fixed z-30 pointer-events-none border border-primary-500 bg-primary-500/10"
+          style={{
+            left: Math.min(marquee.x1, marquee.x2),
+            top: Math.min(marquee.y1, marquee.y2),
+            width: Math.abs(marquee.x2 - marquee.x1),
+            height: Math.abs(marquee.y2 - marquee.y1),
+          }}
+        />
+      )}
+
+      {/* Duplicate-file warning lives in Layout (shared by every upload path) */}
 
       <ConfirmDialog
         open={!!confirmDoc}
