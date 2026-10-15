@@ -86,7 +86,7 @@ function Layout() {
   useEffect(() => {
     let alive = true;
     const fetchQueueDocuments = () => {
-      api.get('/documents', { params: { limit: 100 } })
+      api.get('/documents/queue')
         .then((res) => { if (alive) setQueueDocuments(res.data || []); })
         .catch(() => {});
     };

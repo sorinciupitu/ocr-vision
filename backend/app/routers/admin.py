@@ -14,8 +14,10 @@ from app.settings_service import (
     get_setting, registration_open, set_setting,
 )
 from app.log_buffer import log_buffer
+from app.config import get_settings
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+app_settings = get_settings()
 
 
 def require_admin(user: User = Depends(get_current_user)) -> User:
@@ -41,10 +43,13 @@ def update_registration(
 
 @router.get("/llm", response_model=LLMSettings)
 def read_llm_settings(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    provider = get_setting(db, LLM_PROVIDER, "ollama")
+    default_base_url = app_settings.vllm_url if provider == "vllm" else ""
+    default_model = app_settings.vllm_model if provider == "vllm" else ""
     return {
-        "provider": get_setting(db, LLM_PROVIDER, "ollama"),
-        "base_url": get_setting(db, LLM_BASE_URL, ""),
-        "model": get_setting(db, LLM_MODEL, ""),
+        "provider": provider,
+        "base_url": get_setting(db, LLM_BASE_URL, default_base_url) or default_base_url,
+        "model": get_setting(db, LLM_MODEL, default_model) or default_model,
         "api_key_set": bool(get_setting(db, LLM_API_KEY, "")),
     }
 
@@ -55,12 +60,17 @@ def update_llm_settings(
     db: Session = Depends(get_db),
     admin: User = Depends(require_admin),
 ):
+    provider = update.provider.strip().lower()
     base_url = update.base_url.strip()
+    model = update.model.strip()
+    if provider == "vllm":
+        base_url = base_url or app_settings.vllm_url
+        model = model or app_settings.vllm_model
     if base_url and not base_url.startswith(("http://", "https://")):
         raise HTTPException(status_code=400, detail="LLM endpoint must start with http:// or https://")
-    set_setting(db, LLM_PROVIDER, update.provider.strip())
+    set_setting(db, LLM_PROVIDER, provider)
     set_setting(db, LLM_BASE_URL, base_url)
-    set_setting(db, LLM_MODEL, update.model.strip())
+    set_setting(db, LLM_MODEL, model)
     if update.api_key is not None:
         set_setting(db, LLM_API_KEY, update.api_key.strip())
     return read_llm_settings(db, admin)

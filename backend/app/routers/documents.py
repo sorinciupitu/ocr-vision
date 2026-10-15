@@ -126,7 +126,19 @@ def get_documents(
         query = query.filter(Document.folder_id == folder_id)
     if tag_id is not None:
         query = query.join(Document.tags).filter(Tag.id == tag_id)
-    return query.offset(skip).limit(limit).all()
+    return query.order_by(Document.created_at.desc()).offset(skip).limit(limit).all()
+
+
+@router.get("/queue", response_model=List[DocumentResponse])
+def get_processing_queue(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return every document still requiring OCR attention for the current user."""
+    return db.query(Document).filter(
+        Document.owner_id == current_user.id,
+        Document.ocr_status.in_(("pending", "processing", "failed")),
+    ).order_by(Document.created_at.desc()).all()
 
 
 @router.get("/search", response_model=List[SearchResult])
