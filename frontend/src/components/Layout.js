@@ -3,7 +3,7 @@ import { Navigate, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { Menu, Transition } from '@headlessui/react';
 import {
-  MagnifyingGlassIcon, DocumentPlusIcon, FolderArrowDownIcon,
+  MagnifyingGlassIcon, DocumentPlusIcon, FolderArrowDownIcon, QueueListIcon,
   ArrowRightOnRectangleIcon, PlusIcon, ArrowUpTrayIcon, ChartBarIcon,
   Cog6ToothIcon, CpuChipIcon, ChevronDoubleLeftIcon, ChevronDoubleRightIcon,
   FolderIcon, HomeIcon, PencilIcon
@@ -58,6 +58,8 @@ function Layout() {
   const location = useLocation();
   const fileInputRef = useRef(null);
   const [uploadState, setUploadState] = useState(getUploadState);
+  const [queueDocuments, setQueueDocuments] = useState([]);
+  const [queueOpen, setQueueOpen] = useState(false);
   const [folders, setFolders] = useState([]);
   const [tags, setTags] = useState([]);
   const [editingTag, setEditingTag] = useState(null);
@@ -79,9 +81,32 @@ function Layout() {
   // state and the duplicate-file dialog shown on every page.
   useEffect(() => subscribeUploads(() => setUploadState(getUploadState())), []);
 
+  // Keep a global view of server-side OCR work. The Dashboard has the full
+  // queue controls; this compact panel keeps activity visible on every page.
+  useEffect(() => {
+    let alive = true;
+    const fetchQueueDocuments = () => {
+      api.get('/documents', { params: { limit: 100 } })
+        .then((res) => { if (alive) setQueueDocuments(res.data || []); })
+        .catch(() => {});
+    };
+    fetchQueueDocuments();
+    const interval = setInterval(fetchQueueDocuments, 5000);
+    const refresh = () => fetchQueueDocuments();
+    window.addEventListener('docs-changed', refresh);
+    return () => {
+      alive = false;
+      clearInterval(interval);
+      window.removeEventListener('docs-changed', refresh);
+    };
+  }, []);
+
   const uploading = uploadState.uploads.some(
     (u) => u.status === 'queued' || u.status === 'uploading'
   );
+  const queueUploads = uploadState.uploads.filter((u) => u.status !== 'done');
+  const queueDocs = queueDocuments.filter((d) => ['pending', 'processing', 'failed'].includes(d.ocr_status));
+  const queueCount = queueUploads.length + queueDocs.length;
 
   // Global shortcut: Cmd/Ctrl+K toggles the search overlay, like vite.dev.
   useEffect(() => {
@@ -553,6 +578,26 @@ function Layout() {
 
       {/* Floating action buttons (desktop; phones use header + bottom bar) */}
       <div className="fixed bottom-6 right-6 hidden md:flex flex-col items-end space-y-3 z-40">
+        {queueOpen && (
+          <div className="w-[min(92vw,28rem)] max-h-[min(70vh,34rem)] overflow-y-auto rounded-2xl bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 shadow-2xl p-4 text-left">
+            <div className="flex items-center justify-between mb-3">
+              <div><h3 className="text-sm font-bold text-gray-900 dark:text-gray-100">Processing queue</h3><p className="text-xs text-gray-500 dark:text-gray-400">Se actualizează automat</p></div>
+              <button type="button" onClick={() => navigate('/')} className="text-xs text-primary-600 dark:text-primary-400 hover:underline">Dashboard</button>
+            </div>
+            {queueUploads.length > 0 && <div className="mb-3"><p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1.5">Upload</p>{queueUploads.map((u) => <div key={u.id} className="flex items-center gap-2 py-1 text-sm"><span className={`w-2 h-2 rounded-full flex-shrink-0 ${u.status === 'error' ? 'bg-red-500' : 'bg-primary-500 animate-pulse'}`} /><span className="truncate flex-1 text-gray-800 dark:text-gray-200" title={u.error || u.name}>{u.name}</span><span className="text-xs text-gray-400">{u.status === 'uploading' ? `${u.progress}%` : u.status === 'error' ? 'failed' : 'queued'}</span></div>)}</div>}
+            {queueDocs.length > 0 && <div><p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-1.5">OCR processing</p>{queueDocs.map((d) => <div key={d.id} className="flex items-center gap-2 py-1 text-sm"><span className={`w-2 h-2 rounded-full flex-shrink-0 ${d.ocr_status === 'failed' ? 'bg-red-500' : 'bg-amber-500 animate-pulse'}`} /><span className="truncate flex-1 text-gray-800 dark:text-gray-200" title={d.ocr_error || d.original_filename}>{d.original_filename}</span><span className="text-xs text-gray-400">{d.ocr_status === 'processing' ? 'processing' : d.ocr_status}</span></div>)}</div>}
+            {queueCount === 0 && <p className="text-sm text-gray-400 dark:text-gray-500">Nothing in the queue.</p>}
+          </div>
+        )}
+        <button
+          type="button"
+          onClick={() => setQueueOpen((open) => !open)}
+          className="relative w-12 h-12 rounded-full bg-white dark:bg-gray-800 shadow-lg border border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:text-primary-600 hover:bg-primary-50 dark:hover:bg-gray-700 flex items-center justify-center transition-colors"
+          title="Show upload and OCR processing queue"
+        >
+          <QueueListIcon className="w-6 h-6" />
+          {queueCount > 0 && <span className="absolute -top-1 -right-1 min-w-5 h-5 px-1 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">{queueCount}</span>}
+        </button>
         <button
           type="button"
           onClick={() => navigate('/chat')}

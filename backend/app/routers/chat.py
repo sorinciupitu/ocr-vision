@@ -105,6 +105,29 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db), user: User =
             provider,
         )
         return {"answer": answer, "sources": sources}
+    except httpx.HTTPStatusError as exc:
+        status = exc.response.status_code
+        try:
+            provider_error = exc.response.json().get("error", {})
+            provider_message = provider_error.get("message") or provider_error.get("code")
+        except (ValueError, TypeError):
+            provider_message = None
+        if status == 429:
+            detail = (
+                "OpenRouter a limitat temporar cererea (429). Modelul gratuit are limite de rată; "
+                "alege un model plătit, așteaptă resetarea limitei sau verifică usage/credits în OpenRouter."
+            )
+            if provider_message:
+                detail += f" Detaliu OpenRouter: {provider_message}"
+        else:
+            detail = f"LLM request failed ({status})"
+            if provider_message:
+                detail += f": {provider_message}"
+        logger.exception("LLM chat request failed (status=%s, provider=%s, endpoint=%s, model=%s)", status, provider, base_url, model)
+        headers = {}
+        if exc.response.headers.get("retry-after"):
+            headers["Retry-After"] = exc.response.headers["retry-after"]
+        raise HTTPException(status_code=429 if status == 429 else 502, detail=detail, headers=headers) from exc
     except (httpx.HTTPError, KeyError, ValueError) as exc:
         logger.exception("LLM chat request failed (provider=%s, endpoint=%s, model=%s)", provider, base_url, model)
         raise HTTPException(status_code=502, detail=f"LLM request failed: {exc}") from exc
