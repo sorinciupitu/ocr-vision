@@ -220,12 +220,16 @@ export default function ProcessingQueue({
               <ul className="mt-2 space-y-1.5 max-h-40 overflow-y-auto pr-1">
                 {queuedDocs.map((d) => (
                   <li key={d.id} className="flex items-center gap-3 text-sm">
-                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse flex-shrink-0" />
+                    {d.ocr_status === 'processing' ? (
+                      <ArrowPathIcon className="w-4 h-4 text-primary-500 animate-spin flex-shrink-0" title="Processing now" />
+                    ) : (
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse flex-shrink-0" />
+                    )}
                     <span className="min-w-0 flex-1 truncate text-gray-800 dark:text-gray-200" title={d.original_filename}>
                       {d.original_filename}
                     </span>
                     <span className="text-xs text-gray-400 dark:text-gray-500 flex-shrink-0">
-                      {d.ocr_status === 'processing' ? `processing (attempt ${d.ocr_attempts})` : 'queued'}
+                      {d.ocr_status === 'processing' ? `processing now · attempt ${d.ocr_attempts}` : 'queued'}
                     </span>
                     <button
                       type="button"

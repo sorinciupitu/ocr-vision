@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     # base delay in seconds (delay = base * 2**(attempt-1)).
     ocr_max_retries: int = 3
     ocr_retry_base_delay: float = 2.0
+    # Number of documents processed concurrently. Keep at 1 for the local
+    # vLLM setup, which can become blocked when multiple OCR requests overlap.
+    ocr_concurrency: int = 1
     # Maximum time allowed for one image OCR request to vLLM. Large scanned
     # pages can take longer than the default HTTP client timeout.
     ocr_request_timeout_seconds: float = 300.0

@@ -39,6 +39,7 @@ services:
     environment:
       - DATABASE_URL=postgresql://user:password@db:5432/ocr_db
       - VLLM_URL=http://vllm:8000/v1/chat/completions
+      - OCR_CONCURRENCY=1
       # Per-image OCR timeout. Increase for very large or complex scans.
       - OCR_REQUEST_TIMEOUT_SECONDS=300
       - JWT_SECRET=supersecretkey

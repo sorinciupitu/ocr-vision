@@ -19,6 +19,8 @@ from app.ocr_service import process_file, create_thumbnail
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
+OCR_CONCURRENCY = max(1, settings.ocr_concurrency)
+_ocr_semaphore = asyncio.Semaphore(OCR_CONCURRENCY)
 
 
 def _try_thumbnail(document_id, file_path):
@@ -34,6 +36,33 @@ def _try_thumbnail(document_id, file_path):
 
 
 async def run_ocr_with_retries(document_id, db: Session, max_attempts=None, base_delay=None):
+    """OCR documents serially (by default), draining pending work afterwards.
+
+    Uploads and sync-folder scans can each enqueue their own background task.
+    The semaphore prevents those tasks from overwhelming the OCR backend, and
+    the drain loop makes sure documents that were already queued are picked up
+    automatically when the current document finishes.
+    """
+    async with _ocr_semaphore:
+        doc = db.query(Document).filter(Document.id == document_id).first()
+        # Another queued task may have drained this document while waiting on
+        # the semaphore. Do not OCR a document that is already completed.
+        if not doc or doc.ocr_status not in ("pending", "processing"):
+            return
+        await _run_ocr_with_retries(document_id, db, max_attempts, base_delay)
+        while True:
+            next_id = (
+                db.query(Document.id)
+                .filter(Document.ocr_status == "pending")
+                .order_by(Document.created_at.asc())
+                .first()
+            )
+            if not next_id:
+                return
+            await _run_ocr_with_retries(next_id[0], db)
+
+
+async def _run_ocr_with_retries(document_id, db: Session, max_attempts=None, base_delay=None):
     """OCR one document, retrying transient failures. Owns the status fields."""
     max_attempts = max_attempts or settings.ocr_max_retries
     base_delay = settings.ocr_retry_base_delay if base_delay is None else base_delay
