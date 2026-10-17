@@ -1,5 +1,6 @@
 """Document-grounded chat through an Ollama/OpenAI-compatible endpoint."""
 import logging
+import re
 from typing import List, Tuple
 
 import httpx
@@ -17,15 +18,35 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 logger = logging.getLogger(__name__)
 app_settings = get_settings()
 
+# Retrieve only small, relevant OCR chunks instead of sending whole documents.
+RAG_CHUNK_CHARS = 1_800
+RAG_CHUNK_OVERLAP = 200
+RAG_TOP_K = 8
+MAX_CONTEXT_CHARS = 14_000
+MAX_HISTORY_CHARS = 6_000
+MAX_OUTPUT_TOKENS = 1_200
 
-def _rank_documents(documents: List[Document], question: str) -> List[Tuple[Document, int]]:
-    terms = {word.lower() for word in question.split() if len(word) > 2}
+
+def _retrieve_chunks(documents: List[Document], question: str) -> List[Tuple[Document, str, int]]:
+    terms = {word.lower() for word in re.findall(r"\w+", question) if len(word) > 2}
     ranked = []
     for doc in documents:
-        haystack = f"{doc.title}\n{doc.ocr_text or ''}".lower()
-        score = sum(haystack.count(term) for term in terms)
-        ranked.append((doc, score))
-    return sorted(ranked, key=lambda pair: (pair[1], pair[0].updated_at or pair[0].created_at), reverse=True)
+        text = (doc.ocr_text or "").strip()
+        if not text:
+            continue
+        step = RAG_CHUNK_CHARS - RAG_CHUNK_OVERLAP
+        for start in range(0, len(text), step):
+            chunk = text[start:start + RAG_CHUNK_CHARS]
+            haystack = f"{doc.title}\n{chunk}".lower()
+            score = sum(haystack.count(term) for term in terms)
+            ranked.append((doc, chunk, score))
+            if start + RAG_CHUNK_CHARS >= len(text):
+                break
+    return sorted(
+        ranked,
+        key=lambda item: (item[2], item[0].updated_at or item[0].created_at),
+        reverse=True,
+    )[:RAG_TOP_K]
 
 
 def _context(documents: List[Document], question: str) -> Tuple[str, List[str]]:
@@ -33,18 +54,32 @@ def _context(documents: List[Document], question: str) -> Tuple[str, List[str]]:
     chunks = []
     sources = []
     used = 0
-    for doc, _ in _rank_documents(documents, question):
-        text = (doc.ocr_text or "").strip()
-        if not text:
-            continue
-        remaining = 120000 - used
+    for doc, text, _ in _retrieve_chunks(documents, question):
+        remaining = MAX_CONTEXT_CHARS - used
         if remaining <= 0:
             break
         excerpt = text[:remaining]
         chunks.append(f"DOCUMENT: {doc.title}\n{excerpt}")
-        sources.append(doc.title)
+        if doc.title not in sources:
+            sources.append(doc.title)
         used += len(excerpt)
     return "\n\n---\n\n".join(chunks), sources
+
+
+def _history(messages: List[dict]) -> List[dict]:
+    """Keep recent history bounded so it cannot consume the model context."""
+    selected = []
+    used = 0
+    for item in reversed(messages):
+        if item.get("role") not in {"user", "assistant"} or not isinstance(item.get("content"), str):
+            continue
+        remaining = MAX_HISTORY_CHARS - used
+        if remaining <= 0:
+            break
+        content = item["content"][-remaining:]
+        selected.append({"role": item["role"], "content": content})
+        used += len(content)
+    return list(reversed(selected))
 
 
 async def _ask_llm(base_url: str, model: str, api_key: str, messages: list, provider: str) -> str:
@@ -55,13 +90,24 @@ async def _ask_llm(base_url: str, model: str, api_key: str, messages: list, prov
         if provider.lower() == "ollama" and "/api/chat" in base_url:
             response = await client.post(
                 base_url, headers=headers,
-                json={"model": model, "messages": messages, "stream": False},
+                json={
+                    "model": model,
+                    "messages": messages,
+                    "stream": False,
+                    "options": {"num_predict": MAX_OUTPUT_TOKENS},
+                },
             )
             response.raise_for_status()
             return response.json()["message"]["content"]
         response = await client.post(
             base_url, headers=headers,
-            json={"model": model, "messages": messages, "temperature": 0.2, "stream": False},
+            json={
+                "model": model,
+                "messages": messages,
+                "temperature": 0.2,
+                "max_tokens": MAX_OUTPUT_TOKENS,
+                "stream": False,
+            },
         )
         response.raise_for_status()
         return response.json()["choices"][0]["message"]["content"]
@@ -93,11 +139,7 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db), user: User =
         "Cite the document name in your answer when useful. Answer in the user's language.\n\n"
         f"DOCUMENT CONTEXT:\n{context}"
     )
-    history = [
-        {"role": item.get("role"), "content": item.get("content")}
-        for item in request.history[-20:]
-        if item.get("role") in {"user", "assistant"} and isinstance(item.get("content"), str)
-    ]
+    history = _history(request.history)
     try:
         answer = await _ask_llm(
             base_url, model, api_key,
