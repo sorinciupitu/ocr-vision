@@ -6,7 +6,6 @@ import { format } from 'date-fns';
 import {
   CloudArrowUpIcon, EyeIcon, DocumentMagnifyingGlassIcon,
   ArrowPathIcon, TrashIcon, ArrowTopRightOnSquareIcon,
-  MagnifyingGlassIcon, FolderArrowDownIcon, ArrowUpTrayIcon,
   FolderIcon, TagIcon, CheckIcon, SparklesIcon,
   Squares2X2Icon, TableCellsIcon, ListBulletIcon
 } from '@heroicons/react/24/outline';
@@ -67,7 +66,6 @@ export default function Dashboard() {
   const [deleting, setDeleting] = useState(false);
   const [sortBy, setSortBy] = useState('recent');
   const navigate = useNavigate();
-  const heroInputRef = useRef(null);
   const [searchParams] = useSearchParams();
   const folderId = searchParams.get('folder');
   const tagId = searchParams.get('tag');
@@ -127,7 +125,7 @@ export default function Dashboard() {
     const list = [...documents];
     if (sortBy === 'name') list.sort((a, b) => a.original_filename.localeCompare(b.original_filename));
     else if (sortBy === 'status') list.sort((a, b) => a.ocr_status.localeCompare(b.ocr_status));
-    else list.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+    else list.sort((a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at));
     return list;
   }, [documents, sortBy]);
 
@@ -360,12 +358,6 @@ export default function Dashboard() {
     return () => window.removeEventListener('tags-changed', onTagsChanged);
   }, [fetchDocuments]);
 
-  const quickActions = [
-    { label: 'Upload documents', desc: 'Add PDFs or images to the archive', icon: ArrowUpTrayIcon, onClick: () => heroInputRef.current && heroInputRef.current.click() },
-    { label: 'Search archive', desc: 'Full-text search across OCR text', icon: MagnifyingGlassIcon, onClick: () => navigate('/search') },
-    { label: 'Sync folders', desc: 'Index files from a local directory', icon: FolderArrowDownIcon, onClick: () => navigate('/sync') },
-  ];
-
   const cardClass = 'bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 shadow-sm';
   const iconBtn = 'text-gray-400 dark:text-gray-500 hover:text-primary-600 p-1.5 rounded-full hover:bg-primary-50 dark:hover:bg-gray-800 transition-colors';
 
@@ -585,41 +577,6 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-8">
-      {/* Get started */}
-      <div className="bg-gradient-to-br from-primary-500 to-primary-700 rounded-3xl p-8 text-white shadow-sm">
-        <h2 className="text-2xl font-bold tracking-tight">Get started with DocManager</h2>
-        <p className="text-primary-100 mt-1 text-sm">Scan, archive and search your documents with OCR.</p>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-6">
-          {quickActions.map((action) => {
-            const Icon = action.icon;
-            return (
-              <button
-                key={action.label}
-                onClick={action.onClick}
-                className="text-left bg-white/10 hover:bg-white/20 rounded-2xl p-4 transition-colors"
-              >
-                <Icon className="w-6 h-6 mb-2" />
-                <p className="font-semibold text-sm">{action.label}</p>
-                <p className="text-xs text-primary-100 mt-0.5">{action.desc}</p>
-              </button>
-            );
-          })}
-        </div>
-        <input
-          ref={heroInputRef}
-          type="file"
-          multiple
-          accept=".pdf,.png,.jpg,.jpeg,.tiff,.bmp,.docx"
-          className="hidden"
-          onChange={(e) => {
-            // Copy before clearing: the FileList is live and empties with value.
-            const files = Array.from(e.target.files || []);
-            e.target.value = '';
-            uploadFiles(files);
-          }}
-        />
-      </div>
-
       {/* Dropzone */}
       <div
         {...getRootProps()}

@@ -212,6 +212,11 @@ class MonthlyCount(BaseModel):
     count: int
 
 
+class PeriodCount(BaseModel):
+    period: str
+    count: int
+
+
 class AnalyticsSummary(BaseModel):
     documents: int
     pages: int
@@ -219,6 +224,8 @@ class AnalyticsSummary(BaseModel):
     tags: int
     folders: int
     by_month: List[MonthlyCount]
+    by_week: List[PeriodCount]
+    by_day: List[PeriodCount]
 
 
 class DuplicateCheckRequest(BaseModel):

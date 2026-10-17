@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List
 
 from fastapi import APIRouter, Depends
@@ -8,7 +8,7 @@ from sqlalchemy import func, case, or_
 from app.database import get_db
 from app.models import User, Document, Folder, Tag
 from app.dependencies import get_current_user
-from app.schemas import AnalyticsSummary, MonthlyCount
+from app.schemas import AnalyticsSummary, MonthlyCount, PeriodCount
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
 
@@ -33,6 +33,17 @@ def _month_windows(now: datetime) -> List[str]:
             m, y = 12, y - 1
     months.reverse()
     return months
+
+
+def _period_counts(db: Session, user_id, start: datetime, grain: str):
+    truncated = func.date_trunc(grain, Document.created_at)
+    rows = (
+        db.query(truncated, func.count(Document.id))
+        .filter(Document.owner_id == user_id, Document.created_at >= start)
+        .group_by(truncated)
+        .all()
+    )
+    return {period.strftime("%Y-%m-%d"): count for period, count in rows}
 
 
 @router.get("/summary", response_model=AnalyticsSummary)
@@ -75,6 +86,13 @@ def analytics_summary(
     )
     counts = {d.strftime("%Y-%m"): c for d, c in rows}
 
+    today = datetime(now.year, now.month, now.day)
+    days = [today - timedelta(days=offset) for offset in range(29, -1, -1)]
+    current_week = today - timedelta(days=today.weekday())
+    weeks = [current_week - timedelta(weeks=offset) for offset in range(11, -1, -1)]
+    day_counts = _period_counts(db, current_user.id, days[0], "day")
+    week_counts = _period_counts(db, current_user.id, weeks[0], "week")
+
     return AnalyticsSummary(
         documents=documents,
         pages=int(pages),
@@ -82,4 +100,6 @@ def analytics_summary(
         tags=tags,
         folders=folders,
         by_month=[MonthlyCount(month=m, count=counts.get(m, 0)) for m in months],
+        by_week=[PeriodCount(period=w.strftime("%Y-%m-%d"), count=week_counts.get(w.strftime("%Y-%m-%d"), 0)) for w in weeks],
+        by_day=[PeriodCount(period=d.strftime("%Y-%m-%d"), count=day_counts.get(d.strftime("%Y-%m-%d"), 0)) for d in days],
     )

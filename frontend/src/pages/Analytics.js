@@ -10,8 +10,12 @@ const fmt = (n) => {
   return `${n}`;
 };
 
-const shortMonth = (ym) =>
-  new Date(`${ym}-01T00:00:00`).toLocaleString('en', { month: 'short' });
+const shortPeriod = (period, mode) => {
+  const date = new Date(`${period}T12:00:00`);
+  if (mode === 'month') return date.toLocaleString('en', { month: 'short' });
+  if (mode === 'week') return date.toLocaleDateString('en', { day: 'numeric', month: 'short' });
+  return date.toLocaleDateString('en', { day: 'numeric', month: 'short' });
+};
 
 const cardClass =
   'bg-white dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800 shadow-sm p-5';
@@ -19,6 +23,7 @@ const cardClass =
 export default function Analytics() {
   const [data, setData] = useState(null);
   const [failed, setFailed] = useState(false);
+  const [period, setPeriod] = useState('week');
 
   useEffect(() => {
     api
@@ -38,7 +43,10 @@ export default function Analytics() {
     return <div className="text-gray-500 dark:text-gray-400 animate-pulse">Loading analytics...</div>;
   }
 
-  const max = Math.max(1, ...data.by_month.map((m) => m.count));
+  const chartData = period === 'month'
+    ? data.by_month.map((m) => ({ period: m.month, count: m.count }))
+    : data[period === 'week' ? 'by_week' : 'by_day'];
+  const max = Math.max(1, ...chartData.map((m) => m.count));
 
   const stats = [
     { label: 'Documents', value: data.documents, icon: DocumentIcon, color: 'text-primary-500' },
@@ -71,25 +79,41 @@ export default function Analytics() {
 
       {/* Documents per month */}
       <div className={cardClass}>
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center justify-between gap-4 mb-6 flex-wrap">
           <div>
             <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-              Documents scanned per month
+              Documents scanned
             </h3>
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
-              Last 12 months · {data.documents} documents total · {data.folders} folder{data.folders === 1 ? '' : 's'}
+              {period === 'day' ? 'Last 30 days' : period === 'week' ? 'Last 12 weeks' : 'Last 12 months'} · {data.documents} documents total · {data.folders} folder{data.folders === 1 ? '' : 's'}
             </p>
+          </div>
+          <div className="flex items-center rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+            {[
+              ['day', 'Day'],
+              ['week', 'Week'],
+              ['month', 'Month'],
+            ].map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setPeriod(value)}
+                className={`px-3 py-2 text-xs font-medium transition-colors ${period === value ? 'bg-primary-500 text-white' : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'}`}
+              >
+                {label}
+              </button>
+            ))}
           </div>
         </div>
 
         <div className="flex items-end gap-1.5 sm:gap-2 h-52">
-          {data.by_month.map((m) => {
+          {chartData.map((m) => {
             const pct = m.count > 0 ? Math.max(4, (m.count / max) * 100) : 1.5;
             return (
               <div
-                key={m.month}
+                key={m.period}
                 className="flex-1 h-full flex flex-col items-center justify-end group"
-                title={`${m.month}: ${m.count} document${m.count === 1 ? '' : 's'}`}
+                title={`${m.period}: ${m.count} document${m.count === 1 ? '' : 's'}`}
               >
                 <span className="text-[11px] font-medium text-gray-500 dark:text-gray-400 mb-1">
                   {m.count > 0 ? m.count : ''}
@@ -107,12 +131,12 @@ export default function Analytics() {
           })}
         </div>
         <div className="flex gap-1.5 sm:gap-2 mt-2">
-          {data.by_month.map((m) => (
+          {chartData.map((m) => (
             <span
-              key={m.month}
+              key={m.period}
               className="flex-1 text-center text-[11px] text-gray-400 dark:text-gray-500"
             >
-              {shortMonth(m.month)}
+              {shortPeriod(m.period, period)}
             </span>
           ))}
         </div>
