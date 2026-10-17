@@ -130,7 +130,12 @@ def get_documents(
         query = query.filter(Document.folder_id == folder_id)
     if tag_id is not None:
         query = query.join(Document.tags).filter(Tag.id == tag_id)
-    return query.order_by(Document.created_at.desc()).offset(skip).limit(limit).all()
+    # updated_at changes when OCR finishes, so freshly processed documents
+    # appear first instead of being stuck in upload order.
+    return query.order_by(
+        Document.updated_at.desc(),
+        Document.created_at.desc(),
+    ).offset(skip).limit(limit).all()
 
 
 @router.get("/queue", response_model=List[DocumentResponse])

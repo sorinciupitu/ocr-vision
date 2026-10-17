@@ -1,3 +1,5 @@
+import asyncio
+import logging
 import os
 from pathlib import Path
 from typing import List
@@ -10,6 +12,7 @@ from sqlalchemy import func
 from pydantic import BaseModel
 
 from app.database import get_db
+from app.database import SessionLocal
 from app.models import User, Document, DocumentPage, SyncFolder
 from app.dependencies import get_current_user
 from app.config import get_settings
@@ -18,6 +21,7 @@ from app.schemas import DocumentResponse
 
 router = APIRouter(prefix="/sync", tags=["sync"])
 settings = get_settings()
+logger = logging.getLogger(__name__)
 
 SUPPORTED = set(settings.supported_extensions.split(","))
 
@@ -45,9 +49,27 @@ class SyncResult(BaseModel):
     already_indexed: int
 
 
-async def ingest_file(file_path: str, owner_id: UUID, db: Session):
-    """Background: ingest a single file into the archive (OCR with retries)."""
+_inflight_files: set[str] = set()
+
+
+async def ingest_file(file_path: str, owner_id: UUID):
+    """Ingest one sync-folder file using a task-owned database session."""
+    if file_path in _inflight_files:
+        return
+    _inflight_files.add(file_path)
+    db = SessionLocal()
     try:
+        if not os.path.isfile(file_path):
+            return
+        # A scan can see the same file more than once while OCR is running.
+        # The path is the stable identity of a file in a configured folder.
+        existing = db.query(Document.id).filter(
+            Document.owner_id == owner_id,
+            Document.file_path == file_path,
+        ).first()
+        if existing:
+            return
+
         filename = os.path.basename(file_path)
         ext = os.path.splitext(filename)[1].lower().replace('.', '')
         file_size = os.path.getsize(file_path)
@@ -64,11 +86,56 @@ async def ingest_file(file_path: str, owner_id: UUID, db: Session):
         db.add(doc)
         db.commit()
         db.refresh(doc)
-    except Exception as e:
-        print(f"Error ingesting {file_path}: {e}")
-        return
+        await run_ocr_with_retries(doc.id, db)
+    except Exception:
+        logger.exception("Error ingesting sync file %s", file_path)
+    finally:
+        db.close()
+        _inflight_files.discard(file_path)
 
-    await run_ocr_with_retries(doc.id, db)
+
+def _sync_file_paths(folder: SyncFolder, db: Session) -> tuple[list[str], int, int]:
+    """Return new supported files plus scan counters for one persisted folder."""
+    existing_paths = {
+        path for (path,) in db.query(Document.file_path)
+        .filter(Document.owner_id == folder.owner_id)
+        .all()
+    }
+    files_found = 0
+    already_indexed = 0
+    new_paths = []
+    for root, _dirs, files in os.walk(folder.path):
+        for fname in files:
+            ext = os.path.splitext(fname)[1].lower()
+            if ext not in SUPPORTED:
+                continue
+            full_path = os.path.join(root, fname)
+            files_found += 1
+            if full_path in existing_paths or full_path in _inflight_files:
+                already_indexed += 1
+                continue
+            new_paths.append(full_path)
+    return new_paths, files_found, already_indexed
+
+
+async def scan_active_sync_folders() -> None:
+    """Poll all persisted folders and queue only files not already indexed."""
+    db = SessionLocal()
+    try:
+        folders = db.query(SyncFolder).filter(SyncFolder.is_active.is_(True)).all()
+        for folder in folders:
+            if not os.path.isdir(folder.path):
+                logger.warning("Sync folder is not accessible: %s", folder.path)
+                continue
+            new_paths, _files_found, _already_indexed = _sync_file_paths(folder, db)
+            folder.last_synced_at = datetime.utcnow()
+            db.commit()
+            for file_path in new_paths:
+                asyncio.create_task(ingest_file(file_path, folder.owner_id))
+    except Exception:
+        logger.exception("Automatic sync-folder scan failed")
+    finally:
+        db.close()
 
 
 @router.post("/folders", response_model=SyncFolderResponse)
@@ -112,26 +179,10 @@ async def scan_folder(
     if not os.path.isdir(folder.path):
         raise HTTPException(status_code=400, detail=f"Folder not accessible: {folder.path}")
 
-    existing_paths = set(
-        r[0] for r in db.query(Document.file_path).filter(Document.owner_id == current_user.id).all()
-    )
-
-    files_found = 0
-    files_queued = 0
-    already_indexed = 0
-
-    for root, dirs, files in os.walk(folder.path):
-        for fname in files:
-            ext = os.path.splitext(fname)[1].lower()
-            if ext not in SUPPORTED:
-                continue
-            full_path = os.path.join(root, fname)
-            files_found += 1
-            if full_path in existing_paths:
-                already_indexed += 1
-                continue
-            files_queued += 1
-            background_tasks.add_task(ingest_file, full_path, current_user.id, db)
+    new_paths, files_found, already_indexed = _sync_file_paths(folder, db)
+    files_queued = len(new_paths)
+    for file_path in new_paths:
+        background_tasks.add_task(ingest_file, file_path, current_user.id)
 
     folder.last_synced_at = datetime.utcnow()
     db.commit()

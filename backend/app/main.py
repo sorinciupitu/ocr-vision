@@ -49,10 +49,25 @@ async def requeue_stuck_documents():
         db.close()
 
 
+async def sync_folders_loop():
+    """Keep persisted sync folders up to date without requiring a manual scan."""
+    while True:
+        await sync_folders.scan_active_sync_folders()
+        await asyncio.sleep(30)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await requeue_stuck_documents()
-    yield
+    sync_task = asyncio.create_task(sync_folders_loop())
+    try:
+        yield
+    finally:
+        sync_task.cancel()
+        try:
+            await sync_task
+        except asyncio.CancelledError:
+            pass
 
 
 app = FastAPI(title="OCR Document Archive API", lifespan=lifespan)

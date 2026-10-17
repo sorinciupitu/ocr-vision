@@ -65,7 +65,7 @@ export default function SyncFolders() {
     <div className="space-y-8">
       <div className={`${cardClass} p-8`}>
         <h2 className="text-2xl font-bold tracking-tight text-gray-900 dark:text-gray-100 mb-2">Sync Folders</h2>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">Add local directories containing PDF, DOCX, or image files. Click "Scan" to process and index them for search.</p>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">Add local directories containing PDF, DOCX, or image files. Folders remain configured until you remove them and are checked automatically every 30 seconds. Use "Scan" to process them immediately.</p>
 
         <form onSubmit={handleAdd} className="flex gap-4 flex-wrap">
           <input
