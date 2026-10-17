@@ -28,6 +28,7 @@ RAG_MAX_CHUNKS_PER_DOCUMENT = 3
 MAX_CONTEXT_CHARS = 14_000
 MAX_HISTORY_CHARS = 6_000
 MAX_OUTPUT_TOKENS = 1_200
+LLM_TIMEOUT_SECONDS = 300.0
 STOP_WORDS = {
     "aceasta", "acest", "apoi", "care", "ce", "când", "cat", "cum", "cu",
     "de", "din", "este", "fie", "în", "la", "mai", "mă", "nu", "o", "pe",
@@ -163,7 +164,7 @@ async def _ask_llm(base_url: str, model: str, api_key: str, messages: list, prov
     headers = {"Content-Type": "application/json"}
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
-    async with httpx.AsyncClient(timeout=180.0) as client:
+    async with httpx.AsyncClient(timeout=LLM_TIMEOUT_SECONDS) as client:
         if provider.lower() == "ollama" and "/api/chat" in base_url:
             response = await client.post(
                 base_url, headers=headers,
@@ -176,15 +177,20 @@ async def _ask_llm(base_url: str, model: str, api_key: str, messages: list, prov
             )
             response.raise_for_status()
             return response.json()["message"]["content"]
+        payload = {
+            "model": model,
+            "messages": messages,
+            "temperature": 0.2,
+            "max_tokens": MAX_OUTPUT_TOKENS,
+            "stream": False,
+        }
+        # Qwen 3.5 enables reasoning by default; disable it for short,
+        # document-grounded answers so local CPU inference does not time out.
+        if provider.lower() == "ollama":
+            payload["reasoning_effort"] = "none"
         response = await client.post(
             base_url, headers=headers,
-            json={
-                "model": model,
-                "messages": messages,
-                "temperature": 0.2,
-                "max_tokens": MAX_OUTPUT_TOKENS,
-                "stream": False,
-            },
+            json=payload,
         )
         response.raise_for_status()
         return response.json()["choices"][0]["message"]["content"]
@@ -231,6 +237,12 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db), user: User =
             provider,
         )
         return {"answer": answer, "sources": sources}
+    except httpx.ReadTimeout as exc:
+        logger.exception("LLM chat request timed out (provider=%s, endpoint=%s, model=%s)", provider, base_url, model)
+        raise HTTPException(
+            status_code=504,
+            detail="Modelul LLM a răspuns prea lent. Thinking este dezactivat; verifică încărcarea CPU/GPU a serverului Ollama.",
+        ) from exc
     except httpx.HTTPStatusError as exc:
         status = exc.response.status_code
         try:
