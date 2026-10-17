@@ -48,6 +48,18 @@ def test_irrelevant_documents_are_not_sent_to_the_model():
     assert sources == []
 
 
+def test_expiry_in_another_document_does_not_match_an_itp_question():
+    document = _document(
+        "Avizul de amplasament expiră la data de 17.07.2014.",
+        "dosar teren locuinta.pdf",
+    )
+
+    context, sources = _context([document], "Când expiră ITP-ul mașinii?")
+
+    assert context == ""
+    assert sources == []
+
+
 def test_follow_up_retrieval_keeps_the_previous_subject():
     query = _retrieval_query(
         [{"role": "user", "content": "Când expiră ITP-ul mașinii?"}],

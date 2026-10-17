@@ -23,6 +23,8 @@ app_settings = get_settings()
 RAG_CHUNK_CHARS = 1_800
 RAG_CHUNK_OVERLAP = 200
 RAG_TOP_K = 8
+RAG_MAX_DOCUMENTS = 3
+RAG_MAX_CHUNKS_PER_DOCUMENT = 3
 MAX_CONTEXT_CHARS = 14_000
 MAX_HISTORY_CHARS = 6_000
 MAX_OUTPUT_TOKENS = 1_200
@@ -30,6 +32,10 @@ STOP_WORDS = {
     "aceasta", "acest", "apoi", "care", "ce", "când", "cat", "cum", "cu",
     "de", "din", "este", "fie", "în", "la", "mai", "mă", "nu", "o", "pe",
     "pentru", "să", "sau", "si", "și", "un", "una", "unde", "vreau", "a", "ai",
+}
+GENERIC_QUERY_TERMS = {
+    "cauta", "cauti", "data", "date", "document", "expira", "expirare", "gasesti",
+    "informatii", "numar", "spune", "termen", "valabil", "valabila", "masina", "masinii",
 }
 
 
@@ -49,8 +55,25 @@ def _query_terms(question: str) -> set[str]:
     }
 
 
+def _anchor_terms(terms: set[str]) -> set[str]:
+    """Return distinctive terms that keep unrelated document types out."""
+    return {term for term in terms if term not in GENERIC_QUERY_TERMS and len(term) >= 4} | (
+        {"itp"} if "itp" in terms else set()
+    )
+
+
+def _matches_anchor(words: set[str], anchors: set[str]) -> bool:
+    if not anchors:
+        return True
+    return any(
+        anchor in words or (len(anchor) >= 5 and any(word.startswith(anchor[:5]) for word in words))
+        for anchor in anchors
+    )
+
+
 def _retrieve_chunks(documents: List[Document], question: str) -> List[Tuple[Document, str, int]]:
     terms = _query_terms(question)
+    anchors = _anchor_terms(terms)
     ranked = []
     for doc in documents:
         text = (doc.ocr_text or "").strip()
@@ -61,8 +84,12 @@ def _retrieve_chunks(documents: List[Document], question: str) -> List[Tuple[Doc
             chunk = text[start:start + RAG_CHUNK_CHARS]
             words = re.findall(r"\w+", _normalize(f"{doc.title}\n{chunk}"))
             word_set = set(words)
+            if not _matches_anchor(word_set, anchors):
+                if start + RAG_CHUNK_CHARS >= len(text):
+                    break
+                continue
             score = sum(
-                (words.count(term) * 3) +
+                (words.count(term) * (8 if term in anchors else 3)) +
                 sum(1 for word in word_set if len(term) >= 5 and word.startswith(term[:5]))
                 for term in terms
             )
@@ -70,11 +97,24 @@ def _retrieve_chunks(documents: List[Document], question: str) -> List[Tuple[Doc
                 ranked.append((doc, chunk, score))
             if start + RAG_CHUNK_CHARS >= len(text):
                 break
-    return sorted(
-        ranked,
+    ranked.sort(
         key=lambda item: (item[2], item[0].updated_at or item[0].created_at),
         reverse=True,
-    )[:RAG_TOP_K]
+    )
+    selected = []
+    document_counts = {}
+    for item in ranked:
+        doc = item[0]
+        document_key = str(getattr(doc, "id", None) or doc.title)
+        if document_key not in document_counts and len(document_counts) >= RAG_MAX_DOCUMENTS:
+            continue
+        if document_counts.get(document_key, 0) >= RAG_MAX_CHUNKS_PER_DOCUMENT:
+            continue
+        selected.append(item)
+        document_counts[document_key] = document_counts.get(document_key, 0) + 1
+        if len(selected) >= RAG_TOP_K:
+            break
+    return selected
 
 
 def _context(documents: List[Document], question: str) -> Tuple[str, List[str]]:
