@@ -47,7 +47,22 @@ export default function Chat() {
               </div>
             </div>
           ))}
-          {sending && <p className="text-sm text-gray-400 animate-pulse">Modelul analizează documentele…</p>}
+          {sending && (
+            <div className="flex items-center gap-3 text-sm text-gray-500 dark:text-gray-400 py-2" role="status" aria-live="polite">
+              <div className="relative flex items-center justify-center w-9 h-9 rounded-xl bg-primary-100 dark:bg-primary-500/20 text-primary-600 dark:text-primary-300">
+                <span className="absolute inset-0 rounded-xl border border-primary-400/60 animate-ping" />
+                <CpuChipIcon className="relative w-5 h-5 animate-pulse" />
+              </div>
+              <div>
+                <p className="font-medium text-gray-600 dark:text-gray-300">Caut în documente și pregătesc răspunsul</p>
+                <div className="flex items-center gap-1 mt-1" aria-hidden="true">
+                  <span className="w-1.5 h-1.5 rounded-full bg-primary-500 animate-bounce" />
+                  <span className="w-1.5 h-1.5 rounded-full bg-primary-500 animate-bounce [animation-delay:150ms]" />
+                  <span className="w-1.5 h-1.5 rounded-full bg-primary-500 animate-bounce [animation-delay:300ms]" />
+                </div>
+              </div>
+            </div>
+          )}
         </div>
         <form onSubmit={send} className="flex gap-2 border-t border-gray-100 dark:border-gray-800 pt-4">
           <input value={input} onChange={(e) => setInput(e.target.value)} className="flex-1 px-4 py-3 rounded-xl bg-gray-50 dark:bg-gray-800 text-gray-900 dark:text-gray-100 outline-none focus:ring-2 focus:ring-primary-500" placeholder="Scrie întrebarea…" disabled={sending} />

@@ -146,18 +146,43 @@ def _history(messages: List[dict]) -> List[dict]:
         if remaining <= 0:
             break
         content = item["content"][-remaining:]
-        selected.append({"role": item["role"], "content": content})
+        entry = {"role": item["role"], "content": content}
+        if item["role"] == "assistant" and isinstance(item.get("sources"), list):
+            entry["sources"] = [str(source) for source in item["sources"][:RAG_MAX_DOCUMENTS]]
+        selected.append(entry)
         used += len(content)
     return list(reversed(selected))
 
 
 def _retrieval_query(history: List[dict], message: str) -> str:
     """Include recent user turns so follow-up questions retain their subject."""
+    # A new specific subject should be allowed to replace the previous one.
+    # Short follow-ups such as "și pentru acesta?" still need prior context.
+    if _anchor_terms(_query_terms(message)):
+        return message
     previous_questions = [
         item["content"] for item in history
         if item.get("role") == "user" and isinstance(item.get("content"), str)
     ][-2:]
     return " ".join([*previous_questions, message])
+
+
+def _restrict_to_active_sources(documents: List[Document], history: List[dict], message: str) -> List[Document]:
+    """Keep follow-up questions in the document set established by the last answer."""
+    normalized_message = _normalize(message)
+    explicit_new_search = any(
+        phrase in normalized_message
+        for phrase in ("alt document", "alte documente", "toate documentele", "cauta in", "cauta toate")
+    )
+    if explicit_new_search:
+        return documents
+    for item in reversed(history):
+        if item.get("role") != "assistant" or not item.get("sources"):
+            continue
+        active_titles = set(item["sources"])
+        scoped = [document for document in documents if document.title in active_titles]
+        return scoped or documents
+    return documents
 
 
 async def _ask_llm(base_url: str, model: str, api_key: str, messages: list, provider: str) -> str:
@@ -214,6 +239,7 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db), user: User =
         Document.owner_id == user.id, Document.ocr_status == "completed"
     ).all()
     history = _history(request.history)
+    documents = _restrict_to_active_sources(documents, history, request.message)
     context, sources = _context(documents, _retrieval_query(history, request.message))
     if not context:
         return {

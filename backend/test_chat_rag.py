@@ -5,6 +5,8 @@ from app.routers.chat import (
     MAX_CONTEXT_CHARS,
     RAG_TOP_K,
     _context,
+    _history,
+    _restrict_to_active_sources,
     _retrieval_query,
     _retrieve_chunks,
 )
@@ -63,8 +65,20 @@ def test_expiry_in_another_document_does_not_match_an_itp_question():
 def test_follow_up_retrieval_keeps_the_previous_subject():
     query = _retrieval_query(
         [{"role": "user", "content": "Când expiră ITP-ul mașinii?"}],
-        "Caută talonul.",
+        "Și când expiră?",
     )
 
     assert "ITP" in query
-    assert "talonul" in query
+    assert "expiră" in query
+
+
+def test_follow_up_stays_with_sources_from_the_previous_answer():
+    active = _document("ITP autoturism", "masina.pdf")
+    unrelated = _document("contract imobil", "imobil.pdf")
+    history = _history([
+        {"role": "assistant", "content": "Am găsit informația.", "sources": ["masina.pdf"]},
+    ])
+
+    scoped = _restrict_to_active_sources([active, unrelated], history, "și când expiră?")
+
+    assert [document.title for document in scoped] == ["masina.pdf"]
