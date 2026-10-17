@@ -1,6 +1,7 @@
 """Document-grounded chat through an Ollama/OpenAI-compatible endpoint."""
 import logging
 import re
+import unicodedata
 from typing import List, Tuple
 
 import httpx
@@ -25,10 +26,31 @@ RAG_TOP_K = 8
 MAX_CONTEXT_CHARS = 14_000
 MAX_HISTORY_CHARS = 6_000
 MAX_OUTPUT_TOKENS = 1_200
+STOP_WORDS = {
+    "aceasta", "acest", "apoi", "care", "ce", "când", "cat", "cum", "cu",
+    "de", "din", "este", "fie", "în", "la", "mai", "mă", "nu", "o", "pe",
+    "pentru", "să", "sau", "si", "și", "un", "una", "unde", "vreau", "a", "ai",
+}
+
+
+def _normalize(text: str) -> str:
+    return "".join(
+        char for char in unicodedata.normalize("NFD", text.lower())
+        if unicodedata.category(char) != "Mn"
+    )
+
+
+def _query_terms(question: str) -> set[str]:
+    normalized = _normalize(question)
+    stop_words = {_normalize(word) for word in STOP_WORDS}
+    return {
+        word for word in re.findall(r"\w+", normalized)
+        if len(word) > 2 and word not in stop_words
+    }
 
 
 def _retrieve_chunks(documents: List[Document], question: str) -> List[Tuple[Document, str, int]]:
-    terms = {word.lower() for word in re.findall(r"\w+", question) if len(word) > 2}
+    terms = _query_terms(question)
     ranked = []
     for doc in documents:
         text = (doc.ocr_text or "").strip()
@@ -37,9 +59,15 @@ def _retrieve_chunks(documents: List[Document], question: str) -> List[Tuple[Doc
         step = RAG_CHUNK_CHARS - RAG_CHUNK_OVERLAP
         for start in range(0, len(text), step):
             chunk = text[start:start + RAG_CHUNK_CHARS]
-            haystack = f"{doc.title}\n{chunk}".lower()
-            score = sum(haystack.count(term) for term in terms)
-            ranked.append((doc, chunk, score))
+            words = re.findall(r"\w+", _normalize(f"{doc.title}\n{chunk}"))
+            word_set = set(words)
+            score = sum(
+                (words.count(term) * 3) +
+                sum(1 for word in word_set if len(term) >= 5 and word.startswith(term[:5]))
+                for term in terms
+            )
+            if score > 0:
+                ranked.append((doc, chunk, score))
             if start + RAG_CHUNK_CHARS >= len(text):
                 break
     return sorted(
@@ -80,6 +108,15 @@ def _history(messages: List[dict]) -> List[dict]:
         selected.append({"role": item["role"], "content": content})
         used += len(content)
     return list(reversed(selected))
+
+
+def _retrieval_query(history: List[dict], message: str) -> str:
+    """Include recent user turns so follow-up questions retain their subject."""
+    previous_questions = [
+        item["content"] for item in history
+        if item.get("role") == "user" and isinstance(item.get("content"), str)
+    ][-2:]
+    return " ".join([*previous_questions, message])
 
 
 async def _ask_llm(base_url: str, model: str, api_key: str, messages: list, provider: str) -> str:
@@ -130,16 +167,23 @@ async def chat(request: ChatRequest, db: Session = Depends(get_db), user: User =
     documents = db.query(Document).filter(
         Document.owner_id == user.id, Document.ocr_status == "completed"
     ).all()
-    context, sources = _context(documents, request.message)
+    history = _history(request.history)
+    context, sources = _context(documents, _retrieval_query(history, request.message))
     if not context:
-        raise HTTPException(status_code=400, detail="There are no completed OCR documents to search")
+        return {
+            "answer": "Nu am găsit în documentele OCR informații relevante pentru această întrebare.",
+            "sources": [],
+        }
     system = (
-        "You answer questions using only the document context below. "
-        "If the answer is not present, say clearly that it is not found. "
-        "Cite the document name in your answer when useful. Answer in the user's language.\n\n"
+        "Ești un asistent strict pentru documente OCR. Răspunde în limba utilizatorului. "
+        "Folosește DOAR informațiile explicite din fragmentele DOCUMENT CONTEXT și conversație. "
+        "Nu folosi cunoștințe generale pentru a completa lipsurile și nu inventa date, termene, "
+        "numere sau identități. Dacă informația exactă nu apare, spune clar că nu este găsită. "
+        "Dacă există mai multe mașini sau documente posibile și nu poți identifica unul singur, "
+        "pune o întrebare de clarificare înainte să alegi. Citează doar documentele ale căror fragmente "
+        "au fost folosite efectiv. Răspunde concis.\n\n"
         f"DOCUMENT CONTEXT:\n{context}"
     )
-    history = _history(request.history)
     try:
         answer = await _ask_llm(
             base_url, model, api_key,

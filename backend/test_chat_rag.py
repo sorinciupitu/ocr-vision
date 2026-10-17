@@ -5,6 +5,7 @@ from app.routers.chat import (
     MAX_CONTEXT_CHARS,
     RAG_TOP_K,
     _context,
+    _retrieval_query,
     _retrieve_chunks,
 )
 
@@ -36,3 +37,22 @@ def test_context_has_unique_sources_and_stays_bounded():
 
     assert len(context) <= MAX_CONTEXT_CHARS + 2_000
     assert len(sources) == len(set(sources))
+
+
+def test_irrelevant_documents_are_not_sent_to_the_model():
+    document = _document("informații despre asigurare și călătorie", "calatorie.txt")
+
+    context, sources = _context([document], "care este numărul talonului?")
+
+    assert context == ""
+    assert sources == []
+
+
+def test_follow_up_retrieval_keeps_the_previous_subject():
+    query = _retrieval_query(
+        [{"role": "user", "content": "Când expiră ITP-ul mașinii?"}],
+        "Caută talonul.",
+    )
+
+    assert "ITP" in query
+    assert "talonul" in query
