@@ -168,6 +168,9 @@ STUB.update(text="INV zebra invoice 42")
 r = client.get("/api/documents/search", params={"query": f"zz{suffix}"}, headers=H)
 ids = [x["document"]["id"] for x in r.json()]
 check("search matches by filename", doc3["id"] in ids, r.text)
+r = client.get("/api/documents/search", params={"query": f"zz{suffix} named"}, headers=H)
+ids = [x["document"]["id"] for x in r.json()]
+check("search matches partial filename tokens", doc3["id"] in ids, r.text)
 r = client.get("/api/documents/search", params={"query": "zebra"}, headers=H)
 ids = [x["document"]["id"] for x in r.json()]
 check("search still matches ocr text", doc["id"] in ids, r.text)

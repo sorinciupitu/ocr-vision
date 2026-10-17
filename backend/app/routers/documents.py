@@ -25,6 +25,10 @@ settings = get_settings()
 logger = logging.getLogger(__name__)
 
 
+def _escape_like(value: str) -> str:
+    return re.sub(r"([%_\\])", r"\\\1", value)
+
+
 def _get_owned_document(document_id: UUID, db: Session, user: User) -> Document:
     doc = db.query(Document).filter(
         Document.id == document_id, Document.owner_id == user.id
@@ -152,21 +156,42 @@ def search_documents(
     if not words:
         return []
     tsquery = " & ".join(f"{w}:*" for w in words)
-    # Filename substring match, with LIKE wildcards escaped and matched literally.
-    like_term = "%" + re.sub(r"([%_\\])", r"\\\1", query.strip()) + "%"
+    # Match every searched token independently in the filename. This makes
+    # "bf 2026" match "bf omv 18.09.2026.pdf" instead of requiring the
+    # complete query to occur as one contiguous substring.
+    filename_params = {
+        f"filename_{index}": f"%{_escape_like(word)}%"
+        for index, word in enumerate(words)
+    }
+    filename_match = " AND ".join(
+        f"d.original_filename ILIKE :filename_{index} ESCAPE '\\'"
+        for index in range(len(words))
+    )
+    filename_rank = " + ".join(
+        f"CASE WHEN d.original_filename ILIKE :filename_{index} ESCAPE '\\' THEN 1 ELSE 0 END"
+        for index in range(len(words))
+    )
 
     sql = text("""
         SELECT d.id,
                ts_headline('english', d.ocr_text, to_tsquery('english', :tsquery)) as snippet,
-               COALESCE(ts_rank(d.search_vector, to_tsquery('english', :tsquery)), -1) as rank
+               COALESCE(ts_rank(d.search_vector, to_tsquery('english', :tsquery)), 0)
+                 + (CASE WHEN d.original_filename ILIKE :filename_query ESCAPE '\\' THEN 2 ELSE 0 END)
+                 + ({filename_rank}) as rank
         FROM documents d
         WHERE d.owner_id = :owner_id
           AND (d.search_vector @@ to_tsquery('english', :tsquery)
-               OR d.original_filename ILIKE :like ESCAPE '\\')
+               OR ({filename_match}))
         ORDER BY rank DESC, d.created_at DESC
         LIMIT 20
-    """)
-    result = db.execute(sql, {"tsquery": tsquery, "like": like_term, "owner_id": current_user.id}).fetchall()
+    """.format(filename_match=filename_match, filename_rank=filename_rank))
+    params = {
+        "tsquery": tsquery,
+        "filename_query": f"%{_escape_like(query.strip())}%",
+        "owner_id": current_user.id,
+        **filename_params,
+    }
+    result = db.execute(sql, params).fetchall()
     
     search_results = []
     for r in result:

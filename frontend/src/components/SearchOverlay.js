@@ -24,17 +24,16 @@ const safeSnippet = (html) => ({
 function HighlightedName({ name, query }) {
   const q = query.trim();
   if (!q) return <>{name}</>;
-  const idx = name.toLowerCase().indexOf(q.toLowerCase());
-  if (idx === -1) return <>{name}</>;
-  return (
-    <>
-      {name.slice(0, idx)}
-      <mark className="bg-transparent text-primary-600 dark:text-primary-400 font-bold">
-        {name.slice(idx, idx + q.length)}
-      </mark>
-      {name.slice(idx + q.length)}
-    </>
-  );
+  const terms = [...new Set(q.split(/\s+/).filter(Boolean))]
+    .sort((a, b) => b.length - a.length)
+    .map((term) => term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  if (!terms.length) return <>{name}</>;
+  const matcher = new RegExp(`(${terms.join('|')})`, 'ig');
+  return name.split(matcher).map((part, index) => (
+    terms.some((term) => part.toLowerCase() === term.toLowerCase()) ? (
+      <mark key={index} className="bg-transparent text-primary-600 dark:text-primary-400 font-bold">{part}</mark>
+    ) : <React.Fragment key={index}>{part}</React.Fragment>
+  ));
 }
 
 /** Command-palette style search over the archive, in the spirit of vite.dev:
