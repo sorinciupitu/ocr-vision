@@ -196,6 +196,13 @@ async def scan_folder(
 
     folder.last_synced_at = datetime.utcnow()
     db.commit()
+    logger.info(
+        "Manual sync scan for %s: found=%s queued=%s already_indexed=%s",
+        folder.path,
+        files_found,
+        files_queued,
+        already_indexed,
+    )
 
     return SyncResult(
         folder=folder.path,
