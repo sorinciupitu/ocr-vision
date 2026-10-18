@@ -49,7 +49,9 @@ services:
       - ./sample_documents:/app/local_sync
       # Host directory users add as sync folders in the UI; the container must
       # see the same absolute path because file_path is stored verbatim.
-      - ${SCAN_DIR:-/mnt/scan}:${SCAN_DIR:-/mnt/scan}:ro
+      # rslave lets a network filesystem mounted below this host directory
+      # after container startup become visible inside the backend container.
+      - ${SCAN_DIR:-/mnt/scan}:${SCAN_DIR:-/mnt/scan}:ro,rslave
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:

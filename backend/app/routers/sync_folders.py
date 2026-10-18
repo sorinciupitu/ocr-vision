@@ -23,7 +23,11 @@ router = APIRouter(prefix="/sync", tags=["sync"])
 settings = get_settings()
 logger = logging.getLogger(__name__)
 
-SUPPORTED = set(settings.supported_extensions.split(","))
+SUPPORTED = {
+    f".{extension.strip().lstrip('.').lower()}"
+    for extension in settings.supported_extensions.split(",")
+    if extension.strip()
+}
 
 
 class SyncFolderCreate(BaseModel):
@@ -130,6 +134,12 @@ async def scan_active_sync_folders() -> None:
             new_paths, _files_found, _already_indexed = _sync_file_paths(folder, db)
             folder.last_synced_at = datetime.utcnow()
             db.commit()
+            if new_paths:
+                logger.info(
+                    "Automatic sync queued %s new file(s) from %s",
+                    len(new_paths),
+                    folder.path,
+                )
             for file_path in new_paths:
                 asyncio.create_task(ingest_file(file_path, folder.owner_id))
     except Exception:
