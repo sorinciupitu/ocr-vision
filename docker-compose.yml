@@ -18,6 +18,8 @@ services:
     entrypoint: ["vllm", "serve", "lightonai/LightOnOCR-3-4B", "--trust-remote-code", "--limit-mm-per-prompt", '{"image": 1}', "--default-chat-template-kwargs", '{"enable_thinking": false}', "--mm-processor-cache-gb", "0", "--no-enable-prefix-caching", "--gpu-memory-utilization", "0.84", "--max-model-len", "10000", "--mm-encoder-attn-backend", "TORCH_SDPA", "--attention-backend", "TRITON_ATTN", "--mm-processor-kwargs", '{"max_pixels": 4194304}', "--enforce-eager"]
     environment:
       - PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+      - VLLM_SERVER_DEV_MODE=1
+    command: ["--enable-sleep-mode"]
     ports:
       - "8000:8000"
     volumes:
@@ -39,6 +41,9 @@ services:
     environment:
       - DATABASE_URL=postgresql://user:password@db:5432/ocr_db
       - VLLM_URL=http://vllm:8000/v1/chat/completions
+      - VLLM_CONTROL_URL=http://vllm:8000
+      - VLLM_IDLE_TIMEOUT_SECONDS=600
+      - VLLM_IDLE_SLEEP_ENABLED=true
       - OCR_CONCURRENCY=1
       # Per-image OCR timeout. Increase for very large or complex scans.
       - OCR_REQUEST_TIMEOUT_SECONDS=300

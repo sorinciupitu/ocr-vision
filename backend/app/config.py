@@ -5,7 +5,11 @@ from functools import lru_cache
 class Settings(BaseSettings):
     database_url: str = "postgresql://user:password@db:5432/ocr_db"
     vllm_url: str = "http://vllm:8000/v1/chat/completions"
+    vllm_control_url: str = "http://vllm:8000"
     vllm_model: str = "lightonai/LightOnOCR-3-4B"
+    vllm_idle_timeout_seconds: float = 600.0
+    vllm_idle_sleep_enabled: bool = True
+    vllm_control_timeout_seconds: float = 60.0
     jwt_secret: str = "supersecretkey"
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 60 * 24  # 24 hours

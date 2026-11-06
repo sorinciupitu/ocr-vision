@@ -14,6 +14,7 @@ from app.dependencies import get_current_user
 from app.models import Document, User
 from app.schemas import ChatRequest, ChatResponse
 from app.settings_service import LLM_API_KEY, LLM_BASE_URL, LLM_MODEL, LLM_PROVIDER, get_setting
+from app.vllm_lifecycle import vllm_idle_manager
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 logger = logging.getLogger(__name__)
@@ -190,35 +191,36 @@ async def _ask_llm(base_url: str, model: str, api_key: str, messages: list, prov
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
     async with httpx.AsyncClient(timeout=LLM_TIMEOUT_SECONDS) as client:
-        if provider.lower() == "ollama" and "/api/chat" in base_url:
+        async with vllm_idle_manager.request(active=provider.lower() == "vllm"):
+            if provider.lower() == "ollama" and "/api/chat" in base_url:
+                response = await client.post(
+                    base_url, headers=headers,
+                    json={
+                        "model": model,
+                        "messages": messages,
+                        "stream": False,
+                        "options": {"num_predict": MAX_OUTPUT_TOKENS},
+                    },
+                )
+                response.raise_for_status()
+                return response.json()["message"]["content"]
+            payload = {
+                "model": model,
+                "messages": messages,
+                "temperature": 0.2,
+                "max_tokens": MAX_OUTPUT_TOKENS,
+                "stream": False,
+            }
+            # Qwen 3.5 enables reasoning by default; disable it for short,
+            # document-grounded answers so local CPU inference does not time out.
+            if provider.lower() == "ollama":
+                payload["reasoning_effort"] = "none"
             response = await client.post(
                 base_url, headers=headers,
-                json={
-                    "model": model,
-                    "messages": messages,
-                    "stream": False,
-                    "options": {"num_predict": MAX_OUTPUT_TOKENS},
-                },
+                json=payload,
             )
             response.raise_for_status()
-            return response.json()["message"]["content"]
-        payload = {
-            "model": model,
-            "messages": messages,
-            "temperature": 0.2,
-            "max_tokens": MAX_OUTPUT_TOKENS,
-            "stream": False,
-        }
-        # Qwen 3.5 enables reasoning by default; disable it for short,
-        # document-grounded answers so local CPU inference does not time out.
-        if provider.lower() == "ollama":
-            payload["reasoning_effort"] = "none"
-        response = await client.post(
-            base_url, headers=headers,
-            json=payload,
-        )
-        response.raise_for_status()
-        return response.json()["choices"][0]["message"]["content"]
+            return response.json()["choices"][0]["message"]["content"]
 
 
 @router.post("", response_model=ChatResponse)

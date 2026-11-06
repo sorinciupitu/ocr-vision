@@ -7,6 +7,7 @@ from app.routers import admin, auth, backup, documents, sync_folders, organize, 
 from app.database import engine, Base, SessionLocal
 from app.models import Document
 from app.ocr_runner import run_ocr_with_retries
+from app.vllm_lifecycle import vllm_idle_manager
 
 from app.init_db import init_db
 from app.log_buffer import install_log_buffer
@@ -58,6 +59,7 @@ async def sync_folders_loop():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    await vllm_idle_manager.start()
     await requeue_stuck_documents()
     sync_task = asyncio.create_task(sync_folders_loop())
     try:
@@ -68,6 +70,7 @@ async def lifespan(app: FastAPI):
             await sync_task
         except asyncio.CancelledError:
             pass
+        await vllm_idle_manager.stop()
 
 
 app = FastAPI(title="OCR Document Archive API", lifespan=lifespan)

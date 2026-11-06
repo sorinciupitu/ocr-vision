@@ -15,6 +15,7 @@ from PIL import Image
 from docx import Document as DocxDocument
 
 from app.config import get_settings
+from app.vllm_lifecycle import vllm_idle_manager
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -85,7 +86,8 @@ async def ocr_image(img: Image.Image, prompt: str = "") -> str:
 
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
-            response = await client.post(settings.vllm_url, json=payload)
+            async with vllm_idle_manager.request():
+                response = await client.post(settings.vllm_url, json=payload)
             response.raise_for_status()
             result = response.json()
             return result["choices"][0]["message"]["content"]
