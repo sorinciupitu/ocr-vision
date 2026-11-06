@@ -52,10 +52,6 @@ services:
     volumes:
       - ./backend:/app
       - ./sample_documents:/app/local_sync
-      # Optional host folder for the UI's /mnt/scan sync path. The local
-      # fallback lets the application start when a network mount is offline.
-      # Set SCAN_FOLDER_HOST_PATH=/mnt/scan when the network mount is ready.
-      - ${SCAN_FOLDER_HOST_PATH:-./sample_documents}:/mnt/scan:ro,rslave
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:

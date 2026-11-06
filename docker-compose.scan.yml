@@ -1,0 +1,5 @@
+services:
+  backend:
+    volumes:
+      # Enable this override only after the network share is mounted on host.
+      - /mnt/scan:/mnt/scan:ro,rslave
